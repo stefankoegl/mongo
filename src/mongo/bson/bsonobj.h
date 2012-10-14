@@ -158,6 +158,7 @@ namespace mongo {
             slowish as builds a full new object
          */
         BSONObj removeField(const StringData& name) const;
+        BSONObj replaceField(const StringData& name, const BSONObj& obj) const;
 
         /** returns # of top level fields in the object
            note: iterates to count the fields

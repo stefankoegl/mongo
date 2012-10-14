@@ -1509,6 +1509,27 @@ namespace mongo {
             BSONElementManipulator::lookForTimestamps( io );
         }
 
+        BSONObj ttObj;
+        if( !god && d->hasTransactionTime() )
+        {
+            ttObj = BSONObj((const char *) obuf);
+            BSONElement idField = ttObj.getField( "_id" );
+
+            /* move original _id into an transaction-time _id object */
+            BSONObjBuilder bb;
+            bb.append(idField);
+            bb.appendTimestamp("transaction_start");
+            bb.appendNull("transaction_end");
+            BSONObj temporalId = bb.obj();
+
+            BSONElementManipulator::lookForTimestamps( temporalId );
+
+            ttObj = ttObj.replaceField("_id", temporalId);
+
+            obuf = ttObj.objdata();
+            len = ttObj.objsize();
+        }
+
         int lenWHdr = d->getRecordAllocationSize( len + Record::HeaderSize );
         fassert( 16440, lenWHdr >= ( len + Record::HeaderSize ) );
         

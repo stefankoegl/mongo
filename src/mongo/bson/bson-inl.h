@@ -999,4 +999,18 @@ dodouble:
         }
         return b.obj();
     }
+
+    inline BSONObj BSONObj::replaceField(const StringData& name, const BSONObj& obj) const {
+        BSONObjBuilder b;
+        BSONObjIterator i(*this);
+        while ( i.more() ) {
+            BSONElement e = i.next();
+            const char *fname = e.fieldName();
+            if( strcmp(name.data(), fname) )
+                b.append(e);
+            else
+            	b.append(name, obj);
+        }
+        return b.obj();
+    }
 }
