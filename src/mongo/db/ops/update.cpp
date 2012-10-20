@@ -130,7 +130,7 @@ namespace mongo {
     UpdateResult _updateObjects( bool su,
                                  const char* ns,
                                  const BSONObj& updateobj,
-                                 const BSONObj& patternOrig,
+                                 BSONObj patternOrig,
                                  bool upsert,
                                  bool multi,
                                  bool logop ,
@@ -157,6 +157,14 @@ namespace mongo {
         NamespaceDetails* d = nsdetails(ns); // can be null if an upsert...
         NamespaceDetailsTransient* nsdt = &NamespaceDetailsTransient::get(ns);
 
+        if( d && d->hasTransactionTime() ) {
+            /* make sure that we only allow modification of current documents */
+            BSONObjBuilder b;
+            b.appendElements(patternOrig);
+            b.appendNull("_id.transaction_end");
+            patternOrig = b.obj();
+        }
+
         auto_ptr<ModSet> mods;
         bool isOperatorUpdate = updateobj.firstElementFieldName()[0] == '$';
         int modsIsIndexed = false; // really the # of indexes
@@ -173,7 +181,7 @@ namespace mongo {
         }
 
         if( planPolicy.permitOptimalIdPlan() && !multi && isSimpleIdQuery(patternOrig) && d &&
-           !modsIsIndexed ) {
+           !modsIsIndexed && !d->hasTransactionTime() ) {
             int idxNo = d->findIdIndex();
             if( idxNo >= 0 ) {
                 debug.idhack = true;
@@ -350,7 +358,7 @@ namespace mongo {
                         c->prepareToTouchEarlierIterate();
                     }
 
-                    if ( modsIsIndexed <= 0 && mss->canApplyInPlace() ) {
+                    if ( modsIsIndexed <= 0 && mss->canApplyInPlace() && !d->hasTransactionTime() ) {
                         mss->applyModsInPlace( true );// const_cast<BSONObj&>(onDisk) );
 
                         DEBUGUPDATE( "\t\t\t doing in place update" );
@@ -363,12 +371,54 @@ namespace mongo {
 
                         d->paddingFits();
                     }
+                    else if ( d->hasTransactionTime() )
+                    {
+                        if ( rs )
+                            rs->goingToDelete( onDisk );
+
+                        BSONObj newObj = mss->createNewFromMods();
+
+                        BSONObj idField = onDisk.getField("_id").embeddedObject();
+                        idField = idField.replaceTimestamp("transaction_end");
+                        BSONElement endTimestamp = idField.getField("transaction_end");
+                        BSONElementManipulator( endTimestamp ).initTimestamp();
+                        BSONObj existingObj = onDisk.replaceField("_id", idField);
+
+                        checkTooLarge(existingObj);
+                        verify(nsdt); // TODO: what does that do?!
+
+                        DiskLoc newLoc = theDataFileMgr.updateRecord(ns,
+                                                                     d,
+                                                                     nsdt,
+                                                                     r,
+                                                                     loc,
+                                                                     existingObj.objdata(),
+                                                                     existingObj.objsize(),
+                                                                     debug);
+
+
+                        BSONElement startTimestamp = newObj.getFieldDotted("_id.transaction_start");
+                        BSONElementManipulator( startTimestamp ).initTimestamp(true);
+
+                        //TODO: reset _id field
+                        checkTooLarge(newObj);
+                        verify(nsdt);
+                        theDataFileMgr.insert(ns, newObj.objdata(), newObj.objsize());
+
+                        if ( newLoc != loc || modsIsIndexed ){
+                            // log() << "Moved obj " << newLoc.obj()["_id"] << " from " << loc << " to " << newLoc << endl;
+                            // object moved, need to make sure we don' get again
+                            seenObjects.insert( newLoc );
+                        }
+                    }
                     else {
                         if ( rs )
                             rs->goingToDelete( onDisk );
 
                         BSONObj newObj = mss->createNewFromMods();
+
                         checkTooLarge(newObj);
+
                         DiskLoc newLoc = theDataFileMgr.updateRecord(ns,
                                                                      d,
                                                                      nsdt,

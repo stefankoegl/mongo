@@ -159,6 +159,7 @@ namespace mongo {
          */
         BSONObj removeField(const StringData& name) const;
         BSONObj replaceField(const StringData& name, const BSONObj& obj) const;
+        BSONObj replaceTimestamp(const StringData& name) const;
 
         /** returns # of top level fields in the object
            note: iterates to count the fields

@@ -35,7 +35,7 @@ namespace mongo {
         /** Replace a Timestamp type with a Date type initialized to
             OpTime::now().asDate()
         */
-        void initTimestamp();
+        void initTimestamp(bool reInit=false);
 
         // Note the ones with a capital letter call getDur().writing and journal
 

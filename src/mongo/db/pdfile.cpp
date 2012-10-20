@@ -1129,7 +1129,10 @@ namespace mongo {
         vector<IndexChanges> changes;
         bool changedId = false;
         getIndexChanges(changes, ns, *d, objNew, objOld, changedId);
-        uassert( 13596 , str::stream() << "cannot change _id of a document old:" << objOld << " new:" << objNew , ! changedId );
+
+        if(!d->hasTransactionTime()) {
+        	uassert( 13596 , str::stream() << "cannot change _id of a document old:" << objOld << " new:" << objNew , ! changedId );
+        }
         dupCheck(changes, *d, dl);
 
         if ( toupdate->netLength() < objNew.objsize() ) {
@@ -1513,21 +1516,27 @@ namespace mongo {
         if( !god && d->hasTransactionTime() )
         {
             ttObj = BSONObj((const char *) obuf);
-            BSONElement idField = ttObj.getField( "_id" );
 
-            /* move original _id into an transaction-time _id object */
-            BSONObjBuilder bb;
-            bb.append(idField);
-            bb.appendTimestamp("transaction_start");
-            bb.appendNull("transaction_end");
-            BSONObj temporalId = bb.obj();
+            /* only do all that, if we are not dealing with a temporal object already */
 
-            BSONElementManipulator::lookForTimestamps( temporalId );
+            if( ttObj.getFieldDotted("_id.transaction_start").eoo() )
+            {
+				BSONElement idField = ttObj.getField( "_id" );
 
-            ttObj = ttObj.replaceField("_id", temporalId);
+				/* move original _id into an transaction-time _id object */
+				BSONObjBuilder bb;
+				bb.append(idField);
+				bb.appendTimestamp("transaction_start");
+				bb.appendNull("transaction_end");
+				BSONObj temporalId = bb.obj();
 
-            obuf = ttObj.objdata();
-            len = ttObj.objsize();
+				BSONElementManipulator::lookForTimestamps( temporalId );
+
+				ttObj = ttObj.replaceField("_id", temporalId);
+
+				obuf = ttObj.objdata();
+				len = ttObj.objsize();
+            }
         }
 
         int lenWHdr = d->getRecordAllocationSize( len + Record::HeaderSize );

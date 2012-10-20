@@ -108,10 +108,10 @@ namespace mongo {
     mongo::mutex OpTime::m("optime");
 
     // OpTime::now() uses mutex, thus it is in this file not in the cpp files used by drivers and such
-    void BSONElementManipulator::initTimestamp() {
+    void BSONElementManipulator::initTimestamp(bool reInit) {
         massert( 10332 ,  "Expected CurrentTime type", _element.type() == Timestamp );
         unsigned long long &timestamp = *( reinterpret_cast< unsigned long long* >( value() ) );
-        if ( timestamp == 0 ) {
+        if ( timestamp == 0 || reInit) {
             mutex::scoped_lock lk(OpTime::m);
             timestamp = OpTime::now(lk).asDate();
         }
