@@ -463,12 +463,60 @@ namespace mongo {
 
                 uassert( 10158 ,  "multi update only works with $ operators" , ! multi );
 
-                BSONElementManipulator::lookForTimestamps( updateobj );
-                checkNoMods( updateobj );
-                theDataFileMgr.updateRecord(ns, d, nsdt, r, loc , updateobj.objdata(), updateobj.objsize(), debug, su);
-                if ( logop ) {
-                    DEV wassert( !su ); // super used doesn't get logged, this would be bad.
-                    logOp("u", ns, updateobj, &pattern, 0, fromMigrate );
+                if( d->hasTransactionTime() )
+                {
+                    Record* r = c->_current();
+                    BSONObj onDisk = BSONObj::make(r);
+
+                    /* update transaction_end timestamp in existing document */
+                    BSONObj idField = onDisk.getField("_id").embeddedObject();
+                    idField = idField.replaceTimestamp("transaction_end");
+                    BSONElement endTimestamp = idField.getField("transaction_end");
+                    BSONElementManipulator( endTimestamp ).initTimestamp();
+                    BSONObj existingObj = onDisk.replaceField("_id", idField);
+
+                    checkTooLarge(existingObj);
+                    verify(nsdt);
+
+                    /* clone document and with existing (non-temporal) _id */
+                    BSONElement idValue = onDisk.getFieldDotted("_id._id");
+                    BSONObjBuilder bb;
+                    bb.append(idValue);
+                    bb.appendElementsUnique(updateobj);
+                    BSONObj newObj = bb.obj();
+
+
+                    /* update existing version */
+                    theDataFileMgr.updateRecord(ns,
+                                                 d,
+                                                 nsdt,
+                                                 r,
+                                                 loc,
+                                                 existingObj.objdata(),
+                                                 existingObj.objsize(),
+                                                 debug);
+
+
+                    /* insert new object */
+                    BSONElementManipulator::lookForTimestamps( newObj );
+
+                    checkNoMods( newObj );
+                    theDataFileMgr.insert(ns, newObj.objdata(), newObj.objsize(), su);
+
+                    if ( logop ) {
+                        DEV wassert( !su ); // super used doesn't get logged, this would be bad.
+                        logOp("u", ns, newObj, &pattern, 0, fromMigrate );
+                    }
+                }
+                else
+                {
+                    BSONElementManipulator::lookForTimestamps( updateobj );
+                    checkNoMods( updateobj );
+                    theDataFileMgr.updateRecord(ns, d, nsdt, r, loc , updateobj.objdata(), updateobj.objsize(), debug, su);
+                    if ( logop ) {
+                        DEV wassert( !su ); // super used doesn't get logged, this would be bad.
+                        logOp("u", ns, updateobj, &pattern, 0, fromMigrate );
+                    }
                 }
                 return UpdateResult( 1 , 0 , 1 , BSONObj() );
             } while ( c->ok() );
