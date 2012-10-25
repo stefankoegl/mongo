@@ -20,6 +20,8 @@
 #include "delete.h"
 #include "../queryutil.h"
 #include "../oplog.h"
+#include "db/ttime.h"
+#include "db/ops/update.h"
 #include "mongo/client/dbclientinterface.h"
 #include "mongo/util/stacktrace.h"
 
@@ -45,11 +47,14 @@ namespace mongo {
             }
         }
 
+        NamespaceDetails *d = nsdetails( ns );
+        if ( ! d )
+            return 0;
+        uassert( 10101 ,  "can't remove from a capped collection" , ! d->isCapped() );
+
+        if( d->hasTransactionTime() )
         {
-            NamespaceDetails *d = nsdetails( ns );
-            if ( ! d )
-                return 0;
-            uassert( 10101 ,  "can't remove from a capped collection" , ! d->isCapped() );
+            pattern = addCurrentVersionCriterion(pattern);
         }
 
         long long nDeleted = 0;
@@ -132,7 +137,26 @@ namespace mongo {
             if ( rs )
                 rs->goingToDelete( rloc.obj() /*cc->c->current()*/ );
 
-            theDataFileMgr.deleteRecord(ns, rloc.rec(), rloc);
+            if( d->hasTransactionTime() )
+            {
+                BSONObj onDisk = BSONObj::make(rloc.rec());
+
+                cout << onDisk.toString(false, false) << endl;
+
+                onDisk = setTransactionEndTimestamp(onDisk);
+                cout << onDisk.toString(false, false) << endl;
+
+                NamespaceDetailsTransient* nsdt = &NamespaceDetailsTransient::get(ns);
+
+                OpDebug debug;
+                theDataFileMgr.updateRecord(ns, d, nsdt, rloc.rec(), rloc, onDisk.objdata(), onDisk.objsize(), debug, false);
+                cout << onDisk.toString(false, false) << endl;
+
+            }
+            else
+            {
+                theDataFileMgr.deleteRecord(ns, rloc.rec(), rloc);
+            }
             nDeleted++;
             if ( foundAllResults ) {
                 break;
