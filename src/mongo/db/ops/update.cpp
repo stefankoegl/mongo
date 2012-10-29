@@ -21,6 +21,7 @@
 #include "mongo/db/oplog.h"
 #include "mongo/db/pagefault.h"
 #include "mongo/db/queryutil.h"
+#include "mongo/db/ttime.h"
 #include "mongo/client/dbclientinterface.h"
 
 #include "update.h"
@@ -159,10 +160,7 @@ namespace mongo {
 
         if( d && d->hasTransactionTime() ) {
             /* make sure that we only allow modification of current documents */
-            BSONObjBuilder b;
-            b.appendElements(patternOrig);
-            b.appendNull("_id.transaction_end");
-            patternOrig = b.obj();
+            patternOrig = addCurrentVersionCriterion(patternOrig);
         }
 
         auto_ptr<ModSet> mods;
@@ -378,14 +376,10 @@ namespace mongo {
 
                         BSONObj newObj = mss->createNewFromMods();
 
-                        BSONObj idField = onDisk.getField("_id").embeddedObject();
-                        idField = idField.replaceTimestamp("transaction_end");
-                        BSONElement endTimestamp = idField.getField("transaction_end");
-                        BSONElementManipulator( endTimestamp ).initTimestamp();
-                        BSONObj existingObj = onDisk.replaceField("_id", idField);
+                        BSONObj existingObj = setTransactionEndTimestamp(onDisk);
 
                         checkTooLarge(existingObj);
-                        verify(nsdt); // TODO: what does that do?!
+                        verify(nsdt);
 
                         DiskLoc newLoc = theDataFileMgr.updateRecord(ns,
                                                                      d,
@@ -397,10 +391,7 @@ namespace mongo {
                                                                      debug);
 
 
-                        BSONElement startTimestamp = newObj.getFieldDotted("_id.transaction_start");
-                        BSONElementManipulator( startTimestamp ).initTimestamp(true);
-
-                        //TODO: reset _id field
+                        setTransactionStartTimestamp(newObj);
                         checkTooLarge(newObj);
                         verify(nsdt);
                         theDataFileMgr.insert(ns, newObj.objdata(), newObj.objsize());
@@ -469,11 +460,7 @@ namespace mongo {
                     BSONObj onDisk = BSONObj::make(r);
 
                     /* update transaction_end timestamp in existing document */
-                    BSONObj idField = onDisk.getField("_id").embeddedObject();
-                    idField = idField.replaceTimestamp("transaction_end");
-                    BSONElement endTimestamp = idField.getField("transaction_end");
-                    BSONElementManipulator( endTimestamp ).initTimestamp();
-                    BSONObj existingObj = onDisk.replaceField("_id", idField);
+                    BSONObj existingObj = setTransactionEndTimestamp(onDisk);
 
                     checkTooLarge(existingObj);
                     verify(nsdt);

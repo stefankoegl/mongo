@@ -50,6 +50,7 @@ _ disallow system* manipulations from the database.
 #include "mongo/db/ops/delete.h"
 #include "mongo/db/repl.h"
 #include "mongo/db/replutil.h"
+#include "mongo/db/ttime.h"
 #include "mongo/util/file.h"
 #include "mongo/util/file_allocator.h"
 #include "mongo/util/hashtab.h"
@@ -1516,27 +1517,9 @@ namespace mongo {
         if( !god && d->hasTransactionTime() )
         {
             ttObj = BSONObj((const char *) obuf);
-
-            /* only do all that, if we are not dealing with a temporal object already */
-
-            if( ttObj.getFieldDotted("_id.transaction_start").eoo() )
-            {
-				BSONElement idField = ttObj.getField( "_id" );
-
-				/* move original _id into an transaction-time _id object */
-				BSONObjBuilder bb;
-				bb.append(idField);
-				bb.appendTimestamp("transaction_start");
-				bb.appendNull("transaction_end");
-				BSONObj temporalId = bb.obj();
-
-				BSONElementManipulator::lookForTimestamps( temporalId );
-
-				ttObj = ttObj.replaceField("_id", temporalId);
-
-				obuf = ttObj.objdata();
-				len = ttObj.objsize();
-            }
+            ttObj = wrapObjectId(ttObj);
+			obuf = ttObj.objdata();
+			len = ttObj.objsize();
         }
 
         int lenWHdr = d->getRecordAllocationSize( len + Record::HeaderSize );
