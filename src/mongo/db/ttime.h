@@ -14,13 +14,13 @@
 
 namespace mongo {
 
-    BSONObj wrapObjectId(BSONObj obj);
+    BSONObj wrapObjectId(BSONObj obj, unsigned long long int val = 0, unsigned inc = 0);
 
     BSONObj addCurrentVersionCriterion(BSONObj pattern);
 
     BSONObj setTransactionEndTimestamp(BSONObj obj);
 
-    void setTransactionStartTimestamp(BSONObj obj);
+    BSONObj setTransactionStartTimestamp(BSONObj newObj, BSONObj prevObj);
 }
 
 #endif /* TTIME_H_ */

@@ -20,7 +20,7 @@ namespace mongo {
      * {_id: ObjectId(1234), a: 1} =>
      * {_id: {_id: ObjectId(1234), transaction_start: Timestamp(789456, 1), transaction_end: null}, a: 1}
      */
-    BSONObj wrapObjectId(BSONObj obj) {
+    BSONObj wrapObjectId(BSONObj obj, unsigned long long int val, unsigned int inc) {
 
         /* only do all that, if we are not dealing with a temporal object already */
         if ( !obj.getFieldDotted("_id.transaction_start").eoo() ) {
@@ -32,7 +32,7 @@ namespace mongo {
         /* move original _id into an transaction-time _id object */
         BSONObjBuilder bb;
         bb.append(idField);
-        bb.appendTimestamp("transaction_start");
+        bb.appendTimestamp("transaction_start", val, inc);
         bb.appendNull("transaction_end");
         BSONObj temporalId = bb.obj();
 
@@ -57,10 +57,16 @@ namespace mongo {
         return obj.replaceField("_id", idField);
     }
 
-    void setTransactionStartTimestamp(BSONObj obj) {
-        BSONElement startTimestamp = obj.getFieldDotted(
-                "_id.transaction_start");
-        BSONElementManipulator(startTimestamp).initTimestamp(true);
+    BSONObj setTransactionStartTimestamp(BSONObj newObj, BSONObj prevObj)
+    {
+        Date_t endTimestampTime = prevObj.getFieldDotted("_id.transaction_end").timestampTime();
+        unsigned int endTimestampInc = prevObj.getFieldDotted("_id.transaction_end").timestampInc();
+
+        BSONElement idValue = prevObj.getFieldDotted("_id._id");
+        BSONObjBuilder bb;
+        bb.append(idValue);
+        bb.appendElementsUnique(newObj);
+        return wrapObjectId(bb.obj(), endTimestampTime, endTimestampInc);
     }
 }
 

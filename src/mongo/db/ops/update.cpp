@@ -391,7 +391,8 @@ namespace mongo {
                                                                      debug);
 
 
-                        setTransactionStartTimestamp(newObj);
+                        newObj = setTransactionStartTimestamp(newObj, existingObj);
+
                         checkTooLarge(newObj);
                         verify(nsdt);
                         theDataFileMgr.insert(ns, newObj.objdata(), newObj.objsize());
@@ -465,13 +466,7 @@ namespace mongo {
                     checkTooLarge(existingObj);
                     verify(nsdt);
 
-                    /* clone document and with existing (non-temporal) _id */
-                    BSONElement idValue = onDisk.getFieldDotted("_id._id");
-                    BSONObjBuilder bb;
-                    bb.append(idValue);
-                    bb.appendElementsUnique(updateobj);
-                    BSONObj newObj = bb.obj();
-
+                    BSONObj newObj = setTransactionStartTimestamp(updateobj, existingObj);
 
                     /* update existing version */
                     theDataFileMgr.updateRecord(ns,
