@@ -30,6 +30,7 @@
 #include "../../server.h"
 #include "../queryoptimizercursor.h"
 #include "../pagefault.h"
+#include "../ttime.h"
 
 namespace mongo {
 
@@ -992,6 +993,14 @@ namespace mongo {
         query = query.getOwned();
         order = order.getOwned();
 
+        Client::ReadContext ctx( ns , dbpath ); // read locks
+        NamespaceDetails *d = nsdetails( ns );
+
+        if( d && d->hasTransactionTime() )
+        {
+            query = addTemporalCriteria(query);
+        }
+
         bool hasRetried = false;
         scoped_ptr<PageFaultRetryableSection> pgfs;
         scoped_ptr<NoPageFaultsAllowed> npfe;
@@ -1003,7 +1012,6 @@ namespace mongo {
             }
                 
             try {
-                Client::ReadContext ctx( ns , dbpath ); // read locks
                 const ConfigVersion shardingVersionAtStart = shardingState.getVersion( ns );
                 
                 replVerifyReadsOk(&pq);

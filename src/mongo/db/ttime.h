@@ -21,6 +21,8 @@ namespace mongo {
     BSONObj setTransactionEndTimestamp(BSONObj obj);
 
     BSONObj setTransactionStartTimestamp(BSONObj newObj, BSONObj prevObj);
+
+    BSONObj addTemporalCriteria(BSONObj query);
 }
 
 #endif /* TTIME_H_ */

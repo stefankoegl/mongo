@@ -68,5 +68,56 @@ namespace mongo {
         bb.appendElementsUnique(newObj);
         return wrapObjectId(bb.obj(), endTimestampTime, endTimestampInc);
     }
+
+    BSONObj addTemporalCriteria(BSONObj query)
+    {
+        if( !query.hasElement("transaction") )
+        {
+            return addCurrentVersionCriterion(query);
+        }
+
+        BSONElement allElem = query.getFieldDotted("transaction.all");
+        if( !allElem.eoo() )
+        {
+            /* TODO: assert allElem.trueValue() */
+            return query;
+        }
+
+        BSONElement atElem = query.getFieldDotted("transaction.at");
+        cout << atElem.type() << endl;
+        if (!atElem.eoo())
+        {
+            BSONObjBuilder bb;
+
+            // the transaction started before the at-timestamp
+            BSONObjBuilder startT(bb.subobjStart(StringData("_id.transaction_start")));
+            startT.appendAs(atElem, "$lte");
+            startT.done();
+
+            // and either is still current
+            BSONArrayBuilder arr( bb.subarrayStart( "$or" ) );
+
+            BSONObjBuilder upperNull(arr.subobjStart());
+            upperNull.appendNull(StringData("_id.transaction_end"));
+            upperNull.done();
+
+            // ... or ended after the at-timestamp
+            BSONObjBuilder upper(arr.subobjStart());
+            BSONObjBuilder upperVal(upper.subobjStart(StringData("_id.transaction_end")));
+            upperVal.appendAs(atElem, "$gte");
+            upperVal.done();
+            upper.done();
+
+            arr.done();
+            bb.done();
+
+            // all other conditions are inserted afterwards
+            query = query.removeField("transaction");
+            bb.appendElementsUnique(query);
+            query = bb.obj();
+        }
+
+        return query;
+    }
 }
 
