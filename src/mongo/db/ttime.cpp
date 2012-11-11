@@ -69,31 +69,10 @@ namespace mongo {
         return wrapObjectId(bb.obj(), endTimestampTime, endTimestampInc);
     }
 
-    BSONObj addTemporalCriteria(BSONObj query)
+    void addFromCondition(BSONObjBuilder &bb, BSONElement from)
     {
-        if( !query.hasElement("transaction") )
+        if( !from.isNull() )
         {
-            return addCurrentVersionCriterion(query);
-        }
-
-        BSONElement allElem = query.getFieldDotted("transaction.all");
-        if( !allElem.eoo() )
-        {
-            /* TODO: assert allElem.trueValue() */
-            return query;
-        }
-
-        BSONElement atElem = query.getFieldDotted("transaction.at");
-        cout << atElem.type() << endl;
-        if (!atElem.eoo())
-        {
-            BSONObjBuilder bb;
-
-            // the transaction started before the at-timestamp
-            BSONObjBuilder startT(bb.subobjStart(StringData("_id.transaction_start")));
-            startT.appendAs(atElem, "$lte");
-            startT.done();
-
             // and either is still current
             BSONArrayBuilder arr( bb.subarrayStart( "$or" ) );
 
@@ -101,15 +80,85 @@ namespace mongo {
             upperNull.appendNull(StringData("_id.transaction_end"));
             upperNull.done();
 
-            // ... or ended after the at-timestamp
+            // ... or ended after the from-timestamp
             BSONObjBuilder upper(arr.subobjStart());
             BSONObjBuilder upperVal(upper.subobjStart(StringData("_id.transaction_end")));
-            upperVal.appendAs(atElem, "$gte");
+            upperVal.appendAs(from, "$gte");
             upperVal.done();
             upper.done();
 
             arr.done();
-            bb.done();
+        }
+    }
+
+    void addToCondition(BSONObjBuilder &bb, BSONElement to)
+    {
+        if( !to.isNull() )
+        {
+            // the transaction started before the to-timestamp
+            BSONObjBuilder startT(bb.subobjStart(StringData("_id.transaction_start")));
+            startT.appendAs(to, "$lte");
+            startT.done();
+        }
+    }
+
+    BSONObj addTemporalCriteria(BSONObj query)
+    {
+        /* no temporal criterion specified, return only current documents */
+        if( !query.hasElement("transaction") )
+        {
+            return addCurrentVersionCriterion(query);
+        }
+
+        /* explicitly requested current documents only */
+        BSONElement current = query.getFieldDotted("transaction.current");
+        if( !current.eoo() )
+        {
+            /* TODO: assert current.trueValue() */
+            return addCurrentVersionCriterion(query);
+        }
+
+        BSONElement inrangeElem = query.getFieldDotted("transaction.inrange");
+        if( !inrangeElem.eoo() )
+        {
+            massert(1234000, "must contain array", inrangeElem.type() == Array);
+            vector<BSONElement> elems = inrangeElem.Array();
+
+            massert(1234001, "array must contain two elements", elems.size() == 2);
+            BSONElement fst = elems[0];
+            BSONElement snd = elems[1];
+
+            massert(1234002, "array must contain at least one non-null element", fst.isNull() && snd.isNull());
+
+            BSONObjBuilder bb;
+
+            addFromCondition(bb, fst);
+            addToCondition(bb, snd);
+
+            // all other conditions are inserted afterwards
+            query = query.removeField("transaction");
+            bb.appendElementsUnique(query);
+            query = bb.obj();
+        }
+
+        /* return all document versions */
+        BSONElement allElem = query.getFieldDotted("transaction.all");
+        if( !allElem.eoo() )
+        {
+            /* TODO: assert allElem.trueValue() */
+            return query;
+        }
+
+        /* return document versions that were current at a specific point in time */
+        BSONElement atElem = query.getFieldDotted("transaction.at");
+        cout << atElem.type() << endl;
+        if (!atElem.eoo())
+        {
+            BSONObjBuilder bb;
+
+            /* from and to is the same timestamp */
+            addFromCondition(bb, atElem);
+            addToCondition(bb, atElem);
 
             // all other conditions are inserted afterwards
             query = query.removeField("transaction");
