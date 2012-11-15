@@ -332,6 +332,18 @@ namespace mongo {
         if ( mx > 0 )
             d->setMaxCappedDocs( mx );
 
+        /* automatically create temporal index */
+        if ( d->hasTransactionTime() )
+        {
+            BSONObj indexInfo = BSON( "key" << BSON( "_id.transaction_start" << 1 << "transaction_end" << -1) <<
+                                      "ns" << ns <<
+                                      "name" << "temporal_idx" );
+
+            string index = nsToDatabase(ns).append(".system.indexes");
+            theDataFileMgr.insertWithObjMod(index.c_str(), indexInfo, false);
+            d->addIndex(ns);
+        }
+
         bool isFreeList = strstr(ns, FREELIST_NS) != 0;
         if( !isFreeList )
             addNewNamespaceToCatalog(ns, options.isEmpty() ? 0 : &options);
