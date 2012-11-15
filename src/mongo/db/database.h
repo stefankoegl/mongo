@@ -88,7 +88,7 @@ namespace mongo {
 
         MongoDataFile* suitableFile( const char *ns, int sizeNeeded, bool preallocate, bool enforceQuota );
 
-        Extent* allocExtent( const char *ns, int size, bool capped, bool enforceQuota );
+        Extent* allocExtent( const char *ns, int size, bool capped, bool transactiontime, bool enforceQuota );
 
         MongoDataFile* newestFile();
 

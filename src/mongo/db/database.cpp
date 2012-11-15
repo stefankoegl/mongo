@@ -350,13 +350,13 @@ namespace mongo {
     }
 
 
-    Extent* Database::allocExtent( const char *ns, int size, bool capped, bool enforceQuota ) {
+    Extent* Database::allocExtent( const char *ns, int size, bool capped, bool transactiontime, bool enforceQuota ) {
         // todo: when profiling, these may be worth logging into profile collection
         bool fromFreeList = true;
-        Extent *e = DataFileMgr::allocFromFreeList( ns, size, capped );
+        Extent *e = DataFileMgr::allocFromFreeList( ns, size, capped, transactiontime );
         if( e == 0 ) {
             fromFreeList = false;
-            e = suitableFile( ns, size, !capped, enforceQuota )->createExtent( ns, size, capped );
+            e = suitableFile( ns, size, !capped, enforceQuota )->createExtent( ns, size, capped, transactiontime );
         }
         LOG(1) << "allocExtent " << ns << " size " << size << ' ' << fromFreeList << endl; 
         return e;

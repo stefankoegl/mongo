@@ -80,7 +80,7 @@ namespace mongo {
            @param capped - true if capped collection
            @param loops is our recursion check variable - you want to pass in zero
         */
-        Extent* createExtent(const char *ns, int approxSize, bool capped = false, int loops = 0);
+        Extent* createExtent(const char *ns, int approxSize, bool capped = false, bool transactiontime = false, int loops = 0);
 
         DataFileHeader *getHeader() { return header(); }
         HANDLE getFd() { return mmf.getFd(); }
@@ -118,7 +118,7 @@ namespace mongo {
         void init(const string& path );
 
         /* see if we can find an extent of the right size in the freelist. */
-        static Extent* allocFromFreeList(const char *ns, int approxSize, bool capped = false);
+        static Extent* allocFromFreeList(const char *ns, int approxSize, bool capped = false, bool transactiontime = false );
 
         /** @return DiskLoc where item ends up */
         // changedId should be initialized to false

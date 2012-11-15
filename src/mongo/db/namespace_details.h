@@ -100,10 +100,11 @@ namespace mongo {
         int indexBuildInProgress;             // 1 if in prog
     private:
         int _userFlags;
-        char reserved[72];
+        int _hasTransactionTime;
+        char reserved[68];
         /*-------- end data 496 bytes */
     public:
-        explicit NamespaceDetails( const DiskLoc &loc, bool _capped );
+        explicit NamespaceDetails( const DiskLoc &loc, bool _capped, bool transactiontime );
 
         class Extra {
             long long _next;
@@ -158,6 +159,7 @@ namespace mongo {
     public:
 
         bool isCapped() const { return _isCapped; }
+        bool hasTransactionTime() const { return _hasTransactionTime; }
         long long maxCappedDocs() const { verify( isCapped() ); return _maxDocsInCapped; }
         void setMaxCappedDocs( long long max );
 
@@ -625,7 +627,7 @@ namespace mongo {
                 _init();
         }
 
-        void add_ns(const char *ns, DiskLoc& loc, bool capped);
+        void add_ns(const char *ns, DiskLoc& loc, bool capped, bool transactiontime );
         void add_ns( const char *ns, const NamespaceDetails &details );
 
         NamespaceDetails* details(const char *ns) {
