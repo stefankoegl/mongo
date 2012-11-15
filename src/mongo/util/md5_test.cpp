@@ -1,6 +1,6 @@
-// @file nonce.h
+// md5_test.cpp
 
-/*    Copyright 2009 10gen Inc.
+/*    Copyright 2012 10gen Inc.
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -15,24 +15,12 @@
  *    limitations under the License.
  */
 
-#pragma once
+#include "mongo/unittest/unittest.h"
 
-#include <iosfwd>
+extern int do_md5_test(void);
 
 namespace mongo {
-
-    typedef unsigned long long nonce64;
-
-    struct Security {
-        Security();
-        static nonce64 getNonce();
-        static nonce64 getNonceDuringInit(); // use this version during global var constructors
-    private:
-        nonce64 _getNonce();
-        nonce64 __getNonce();
-        std::ifstream *_devrandom;
-        bool _initialized;
-        void init(); // can call more than once
-    };
-
-} // namespace mongo
+    TEST( MD5, BuiltIn1 ) {
+        ASSERT_EQUALS( 0, do_md5_test() );
+    }
+}

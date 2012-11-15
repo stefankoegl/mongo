@@ -24,6 +24,9 @@
 
 #include "mongo/db/client.h"
 
+#include "mongo/base/status.h"
+#include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/auth_external_state_impl.h"
 #include "mongo/db/db.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/curop-inl.h"
@@ -39,6 +42,7 @@
 #include "mongo/util/file_allocator.h"
 #include "mongo/util/mongoutils/checksum.h"
 #include "mongo/util/mongoutils/html.h"
+#include "mongo/util/mongoutils/str.h"
 
 namespace mongo {
 
@@ -108,16 +112,31 @@ namespace mongo {
         Client *c = new Client(desc, mp);
         currentClient.reset(c);
         mongo::lastError.initThread();
+        if (mp != NULL) {
+            // This thread corresponds to an incoming user connection, and thus needs an
+            // AuthorizationManager
+            AuthExternalStateImpl* externalState = new AuthExternalStateImpl();
+            AuthorizationManager* authManager = new AuthorizationManager(externalState);
+            // Go into God scope so that the AuthorizationManager can query the local admin DB
+            // as part of its initialization without needing auth.
+            GodScope gs;
+            Status status = authManager->initialize(new DBDirectClient());
+            massert(16480,
+                    mongoutils::str::stream() << "Error initializing AuthorizationManager: "
+                                              << status.reason(),
+                    status == Status::OK());
+            c->setAuthorizationManager(authManager);
+        }
         return *c;
     }
 
     Client::Client(const char *desc, AbstractMessagingPort *p) :
+        ClientBasic(p),
         _context(0),
         _shutdown(false),
         _desc(desc),
         _god(0),
-        _lastOp(0),
-        _mp(p)
+        _lastOp(0)
     {
         _hasWrittenThisPass = false;
         _pageFaultRetryableSection = 0;

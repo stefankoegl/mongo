@@ -44,17 +44,19 @@ namespace mongo {
     LockState::LockState(){} // ugh
 
     Client::Client(const char *desc , AbstractMessagingPort *p) :
+        ClientBasic(p),
         _context(0),
         _shutdown(false),
         _desc(desc),
         _god(0),
-        _lastOp(0),
-        _mp(p) {
+        _lastOp(0) {
     }
     Client::~Client() {}
     bool Client::shutdown() { return true; }
 
     Client& Client::initThread(const char *desc, AbstractMessagingPort *mp) {
+        // mp is non-null only for client connections, and mongos uses ClientInfo for those
+        massert(16478, "Mongos Client being used for incoming connection thread", mp == NULL);
         setThreadName(desc);
         verify( currentClient.get() == 0 );
         Client *c = new Client(desc, mp);

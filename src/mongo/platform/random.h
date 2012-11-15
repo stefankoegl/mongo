@@ -21,13 +21,14 @@
 
 namespace mongo {
 
+    // TODO(erh) make this is generate 64-bit numbers
     class PseudoRandom {
     public:
-        PseudoRandom( unsigned seed )
-            : _seed( seed ) {
-        }
+        PseudoRandom( int64_t seed );
 
         int32_t nextInt32();
+
+        int64_t nextInt64();
 
         /**
          * @return a number between 0 and max
@@ -35,7 +36,21 @@ namespace mongo {
         int32_t nextInt32( int32_t max ) { return nextInt32() % max; }
 
     private:
-        unsigned _seed;
+        uint32_t _seed;
+    };
+
+    /**
+     * More secure random numbers
+     * Suitable for nonce/crypto
+     * Slower than PseudoRandom, so only use when really need
+     */
+    class SecureRandom {
+    public:
+        virtual ~SecureRandom();
+
+        virtual int64_t nextInt64() = 0;
+
+        static SecureRandom* create();
     };
 
 }

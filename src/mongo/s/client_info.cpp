@@ -33,10 +33,13 @@
 #include "cursors.h"
 #include "grid.h"
 #include "s/writeback_listener.h"
+#include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/auth_external_state_impl.h"
+#include "mongo/util/mongoutils/str.h"
 
 namespace mongo {
 
-    ClientInfo::ClientInfo() {
+    ClientInfo::ClientInfo(AbstractMessagingPort* messagingPort) : ClientBasic(messagingPort) {
         _cur = &_a;
         _prev = &_b;
         _autoSplitOk = true;
@@ -72,13 +75,33 @@ namespace mongo {
         _cur->clear();
     }
 
+    void ClientInfo::_setupAuth() {
+        std::string adminNs = "admin";
+        DBConfigPtr config = grid.getDBConfig(adminNs);
+        Shard shard = config->getShard(adminNs);
+        ShardConnection conn(shard, adminNs);
+        AuthorizationManager* authManager = new AuthorizationManager(new AuthExternalStateImpl());
+        Status status = authManager->initialize(conn.get());
+        massert(16479,
+                mongoutils::str::stream() << "Error initializing AuthorizationManager: "
+                                          << status.reason(),
+                status == Status::OK());
+        setAuthorizationManager(authManager);
+    }
+
+    ClientInfo* ClientInfo::create(AbstractMessagingPort* messagingPort) {
+        ClientInfo * info = _tlInfo.get();
+        massert(16472, "A ClientInfo already exists for this thread", !info);
+        info = new ClientInfo(messagingPort);
+        _tlInfo.reset( info );
+        info->_setupAuth();
+        info->newRequest();
+        return info;
+    }
+
     ClientInfo * ClientInfo::get() {
         ClientInfo * info = _tlInfo.get();
-        if ( ! info ) {
-            info = new ClientInfo();
-            _tlInfo.reset( info );
-            info->newRequest();
-        }
+        massert(16473, "No ClientInfo exists for this thread", info);
         return info;
     }
 
