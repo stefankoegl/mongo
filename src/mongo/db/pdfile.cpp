@@ -1130,10 +1130,7 @@ namespace mongo {
         vector<IndexChanges> changes;
         bool changedId = false;
         getIndexChanges(changes, ns, *d, objNew, objOld, changedId);
-
-        if(!d->hasTransactionTime()) {
-        	uassert( 13596 , str::stream() << "cannot change _id of a document old:" << objOld << " new:" << objNew , ! changedId );
-        }
+        uassert( 13596 , str::stream() << "cannot change _id of a document old:" << objOld << " new:" << objNew , ! changedId );
         dupCheck(changes, *d, dl);
 
         if ( toupdate->netLength() < objNew.objsize() ) {
