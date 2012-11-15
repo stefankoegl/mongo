@@ -107,7 +107,7 @@ namespace mongo {
         /* no temporal criterion specified, return only current documents */
         if( !query.hasElement("transaction") )
         {
-            return addCurrentVersionCriterion(query);
+            query = addCurrentVersionCriterion(query);
         }
 
         /* explicitly requested current documents only */
@@ -115,7 +115,7 @@ namespace mongo {
         if( !current.eoo() )
         {
             /* TODO: assert current.trueValue() */
-            return addCurrentVersionCriterion(query);
+            query = addCurrentVersionCriterion(query);
         }
 
         BSONElement inrangeElem = query.getFieldDotted("transaction.inrange");
@@ -136,7 +136,6 @@ namespace mongo {
             addToCondition(bb, snd);
 
             // all other conditions are inserted afterwards
-            query = query.removeField("transaction");
             bb.appendElementsUnique(query);
             query = bb.obj();
         }
@@ -146,12 +145,11 @@ namespace mongo {
         if( !allElem.eoo() )
         {
             /* TODO: assert allElem.trueValue() */
-            return query;
+            /*return query;*/
         }
 
         /* return document versions that were current at a specific point in time */
         BSONElement atElem = query.getFieldDotted("transaction.at");
-        cout << atElem.type() << endl;
         if (!atElem.eoo())
         {
             BSONObjBuilder bb;
@@ -161,11 +159,11 @@ namespace mongo {
             addToCondition(bb, atElem);
 
             // all other conditions are inserted afterwards
-            query = query.removeField("transaction");
             bb.appendElementsUnique(query);
             query = bb.obj();
         }
 
+        query = query.removeField("transaction");
         return query;
     }
 }
