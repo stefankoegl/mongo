@@ -108,6 +108,8 @@ namespace mongo {
         if( !query.hasElement("transaction") )
         {
             query = addCurrentVersionCriterion(query);
+            query = query.removeField("transaction");
+            return query;
         }
 
         /* explicitly requested current documents only */
@@ -116,6 +118,8 @@ namespace mongo {
         {
             /* TODO: assert current.trueValue() */
             query = addCurrentVersionCriterion(query);
+            query = query.removeField("transaction");
+            return query;
         }
 
         BSONElement inrangeElem = query.getFieldDotted("transaction.inrange");
@@ -137,7 +141,9 @@ namespace mongo {
 
             // all other conditions are inserted afterwards
             bb.appendElementsUnique(query);
+            query = query.removeField("transaction");
             query = bb.obj();
+            return query;
         }
 
         /* return all document versions */
@@ -145,7 +151,8 @@ namespace mongo {
         if( !allElem.eoo() )
         {
             /* TODO: assert allElem.trueValue() */
-            /*return query;*/
+            query = query.removeField("transaction");
+            return query;
         }
 
         /* return document versions that were current at a specific point in time */
@@ -161,8 +168,12 @@ namespace mongo {
             // all other conditions are inserted afterwards
             bb.appendElementsUnique(query);
             query = bb.obj();
+            query = query.removeField("transaction");
+            return query;
         }
 
+        /* no supported transaction-time query found */
+        /* TODO: assert false with proper error message */
         query = query.removeField("transaction");
         return query;
     }
