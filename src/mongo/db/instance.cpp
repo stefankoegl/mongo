@@ -111,7 +111,7 @@ namespace mongo {
     void BSONElementManipulator::initTimestamp() {
         massert( 10332 ,  "Expected CurrentTime type", _element.type() == Timestamp );
         unsigned long long &timestamp = *( reinterpret_cast< unsigned long long* >( value() ) );
-        if ( timestamp == 0) {
+        if ( timestamp == 0 ) {
             mutex::scoped_lock lk(OpTime::m);
             timestamp = OpTime::now(lk).asDate();
         }
