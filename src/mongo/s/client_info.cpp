@@ -17,6 +17,7 @@
  */
 
 #include "pch.h"
+
 #include "server.h"
 #include "../util/scopeguard.h"
 #include "../db/commands.h"
@@ -79,7 +80,16 @@ namespace mongo {
         std::string adminNs = "admin";
         DBConfigPtr config = grid.getDBConfig(adminNs);
         Shard shard = config->getShard(adminNs);
-        ShardConnection conn(shard, adminNs);
+        scoped_ptr<ScopedDbConnection> connPtr(
+                ScopedDbConnection::getInternalScopedDbConnection(shard.getConnString(), 30.0));
+        ScopedDbConnection& conn = *connPtr;
+
+        //
+        // Note: The connection mechanism here is *not* ideal, and should not be used elsewhere.
+        // It is safe in this particular case because the admin database is always on the config
+        // server and does not move.
+        //
+
         AuthorizationManager* authManager = new AuthorizationManager(new AuthExternalStateImpl());
         Status status = authManager->initialize(conn.get());
         massert(16479,
@@ -99,9 +109,18 @@ namespace mongo {
         return info;
     }
 
-    ClientInfo * ClientInfo::get() {
+    ClientInfo * ClientInfo::get(AbstractMessagingPort* messagingPort) {
         ClientInfo * info = _tlInfo.get();
-        massert(16473, "No ClientInfo exists for this thread", info);
+        if (!info) {
+            info = create(messagingPort);
+        }
+        massert(16483,
+                mongoutils::str::stream() << "AbstractMessagingPort was provided to ClientInfo::get"
+                        << " but differs from the one stored in the current ClientInfo object. "
+                        << "Current ClientInfo messaging port "
+                        << (info->port() ? "is not" : "is")
+                        << " NULL",
+                messagingPort == NULL || messagingPort == info->port());
         return info;
     }
 
