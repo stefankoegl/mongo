@@ -1077,6 +1077,45 @@
     <ClInclude Include="..\util\winutil.h">
       <Filter>util\Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\client\dbclientcursor.h">
+      <Filter>client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\client\dbclientinterface.h">
+      <Filter>client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\client\distlock.h">
+      <Filter>client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\client\parallel.h">
+      <Filter>client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\client\redef_macros.h">
+      <Filter>client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\client\syncclusterconnection.h">
+      <Filter>client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\client\undef_macros.h">
+      <Filter>client</Filter>
+    </ClInclude>
+    <ClInclude Include="..\s\type_chunk.h">
+      <Filter>s</Filter>
+    </ClInclude>
+    <ClInclude Include="..\s\type_database.h">
+      <Filter>s</Filter>
+    </ClInclude>
+    <ClInclude Include="..\s\util.h">
+      <Filter>s</Filter>
+    </ClInclude>
+    <ClInclude Include="..\db\btreeposition.h">
+      <Filter>db\Header Files\a to d</Filter>
+    </ClInclude>
+    <ClInclude Include="..\db\intervalbtreecursor.h">
+      <Filter>db\Header Files\e to n</Filter>
+    </ClInclude>
+    <ClInclude Include="..\s\type_shard.h">
+      <Filter>s</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\client\connpool.cpp">
@@ -1903,9 +1942,6 @@
     <ClCompile Include="..\util\touch_pages.cpp">
       <Filter>util\Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\client\authentication_table.cpp">
-      <Filter>client</Filter>
-    </ClCompile>
     <ClCompile Include="histogram_test.cpp">
       <Filter>dbtests</Filter>
     </ClCompile>
@@ -2064,6 +2100,27 @@
     </ClCompile>
     <ClCompile Include="..\db\index_rebuilder.cpp">
       <Filter>db\Source Files\e to n</Filter>
+    </ClCompile>
+    <ClCompile Include="..\client\authentication_table_common.cpp">
+      <Filter>client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\client\authentication_table_server.cpp">
+      <Filter>client</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\type_chunk.cpp">
+      <Filter>s</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\type_database.cpp">
+      <Filter>s</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\btreeposition.cpp">
+      <Filter>db\Source Files\a to d</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\intervalbtreecursor.cpp">
+      <Filter>db\Source Files\e to n</Filter>
+    </ClCompile>
+    <ClCompile Include="..\s\type_shard.cpp">
+      <Filter>s</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
