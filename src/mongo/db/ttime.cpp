@@ -181,5 +181,21 @@ namespace mongo {
         query = query.removeField("transaction");
         return query;
     }
+
+    BSONObj addTemporalOrder(BSONObj order)
+    {
+        BSONElement transaction = order.getField("transaction");
+
+        if( !transaction.eoo() )
+        {
+            /* replace transaction with transaction_id */
+            BSONObjBuilder bb;
+            bb.appendAs(transaction, "transaction_end");
+            bb.appendElementsUnique(order.removeField("transaction"));
+            return bb.obj();
+        }
+
+        return order;
+    }
 }
 

@@ -1004,6 +1004,8 @@ namespace mongo {
         if( d && d->hasTransactionTime() )
         {
             query = addTemporalCriteria(query);
+            order = addTemporalOrder(order);
+            pq.setOrder(order);
         }
 
         bool hasRetried = false;

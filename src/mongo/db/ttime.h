@@ -23,6 +23,8 @@ namespace mongo {
     BSONObj setTransactionStartTimestamp(BSONObj newObj, BSONObj prevObj);
 
     BSONObj addTemporalCriteria(BSONObj query);
+
+    BSONObj addTemporalOrder(BSONObj order);
 }
 
 #endif /* TTIME_H_ */
