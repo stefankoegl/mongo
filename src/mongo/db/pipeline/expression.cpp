@@ -218,6 +218,11 @@ namespace mongo {
         {"$strcasecmp", ExpressionStrcasecmp::create, OpDesc::FIXED_COUNT, 2},
         {"$substr", ExpressionSubstr::create, OpDesc::FIXED_COUNT, 3},
         {"$subtract", ExpressionSubtract::create, OpDesc::FIXED_COUNT, 2},
+        {"$tcmp", ExpressionCompare::createTmpCmp, OpDesc::FIXED_COUNT, 2},
+        {"$tgt", ExpressionCompare::createTmpGt, OpDesc::FIXED_COUNT, 2},
+        {"$tgte", ExpressionCompare::createTmpGte, OpDesc::FIXED_COUNT, 2},
+        {"$lgt", ExpressionCompare::createTmpLt, OpDesc::FIXED_COUNT, 2},
+        {"$lgte", ExpressionCompare::createTmpLte, OpDesc::FIXED_COUNT, 2},
         {"$toLower", ExpressionToLower::create, OpDesc::FIXED_COUNT, 1},
         {"$toUpper", ExpressionToUpper::create, OpDesc::FIXED_COUNT, 1},
         {"$week", ExpressionWeek::create, OpDesc::FIXED_COUNT, 1},
@@ -589,7 +594,43 @@ namespace mongo {
         intrusive_ptr<ExpressionCompare> pExpression(
             new ExpressionCompare(CMP));
         return pExpression;
+   }
+
+
+
+
+   intrusive_ptr<ExpressionNary> ExpressionCompare::createTmpGt() {
+        intrusive_ptr<ExpressionCompare> pExpression(
+            new ExpressionCompare(TGT));
+        return pExpression;
     }
+
+    intrusive_ptr<ExpressionNary> ExpressionCompare::createTmpGte() {
+        intrusive_ptr<ExpressionCompare> pExpression(
+            new ExpressionCompare(TGTE));
+        return pExpression;
+    }
+
+    intrusive_ptr<ExpressionNary> ExpressionCompare::createTmpLt() {
+        intrusive_ptr<ExpressionCompare> pExpression(
+            new ExpressionCompare(TLT));
+        return pExpression;
+    }
+
+    intrusive_ptr<ExpressionNary> ExpressionCompare::createTmpLte() {
+        intrusive_ptr<ExpressionCompare> pExpression(
+            new ExpressionCompare(TLTE));
+        return pExpression;
+    }
+
+    intrusive_ptr<ExpressionNary> ExpressionCompare::createTmpCmp() {
+        intrusive_ptr<ExpressionCompare> pExpression(
+            new ExpressionCompare(TCMP));
+        return pExpression;
+    }
+
+
+
 
     ExpressionCompare::ExpressionCompare(CmpOp theCmpOp):
         ExpressionNary(),
@@ -607,21 +648,28 @@ namespace mongo {
     */
     struct CmpLookup {
         bool truthValue[3]; /* truth value for -1, 0, 1 */
+        bool nullSmallest; /* treat null as the smallest value */
         Expression::CmpOp reverse; /* reverse comparison operator */
-        char name[5]; /* string name (w/trailing '\0') */
+        char name[6]; /* string name (w/trailing '\0') */
     };
-    static const CmpLookup cmpLookup[7] = {
-        /*             -1      0      1      reverse          name   */
-        /* EQ  */ { { false, true,  false }, Expression::EQ,  "$eq"  },
-        /* NE  */ { { true,  false, true },  Expression::NE,  "$ne"  },
-        /* GT  */ { { false, false, true },  Expression::LT,  "$gt"  },
-        /* GTE */ { { false, true,  true },  Expression::LTE, "$gte" },
-        /* LT  */ { { true,  false, false }, Expression::GT,  "$lt"  },
-        /* LTE */ { { true,  true,  false }, Expression::GTE, "$lte" },
-        /* CMP */ { { false, false, false }, Expression::CMP, "$cmp" },
+    static const CmpLookup cmpLookup[12] = {
+        /*             -1      0      1      null  reverse          name   */
+        /* EQ  */ { { false, true,  false }, true,  Expression::EQ,  "$eq"  },
+        /* NE  */ { { true,  false, true },  true,  Expression::NE,  "$ne"  },
+        /* GT  */ { { false, false, true },  true,  Expression::LT,  "$gt"  },
+        /* GTE */ { { false, true,  true },  true,  Expression::LTE, "$gte" },
+        /* LT  */ { { true,  false, false }, true,  Expression::GT,  "$lt"  },
+        /* LTE */ { { true,  true,  false }, true,  Expression::GTE, "$lte" },
+        /* CMP */ { { false, false, false }, true,  Expression::CMP, "$cmp" },
+        /* TGT */ { { false, false, true },  false, Expression::TLT, "$tgt" },
+        /* TGTE*/ { { false, true,  true },  false, Expression::TLTE,"$tgte"},
+        /* TLT */ { { true,  false, false }, false, Expression::TGT, "$tlt" },
+        /* TLTE*/ { { true,  true,  false }, false, Expression::TGTE,"$tlte"},
+        /* TCMP*/ { { false, false, false }, false, Expression::TCMP,"$tcmp"},
     };
 
     intrusive_ptr<Expression> ExpressionCompare::optimize() {
+        //TODO: check
         /* first optimize the comparison operands */
         intrusive_ptr<Expression> pE(ExpressionNary::optimize());
 
@@ -682,7 +730,9 @@ namespace mongo {
         Value pLeft(vpOperand[0]->evaluate(pDocument));
         Value pRight(vpOperand[1]->evaluate(pDocument));
 
-        int cmp = signum(Value::compare(pLeft, pRight));
+        bool nullSmallest = cmpLookup[cmpOp].nullSmallest;
+
+        int cmp = signum(Value::compare(pLeft, pRight, nullSmallest));
 
         if (cmpOp == CMP) {
             switch(cmp) {
@@ -703,6 +753,7 @@ namespace mongo {
     const char *ExpressionCompare::getOpName() const {
         return cmpLookup[cmpOp].name;
     }
+
 
     /* ----------------------- ExpressionCond ------------------------------ */
 
@@ -1580,6 +1631,13 @@ namespace mongo {
             bottomOpen = true;
             pTop = pValue;
             break;
+
+        //TODO: check how to handle these...
+        case TGT:
+        case TGTE:
+        case TLT:
+        case TLTE:
+        case TCMP:
 
         case NE:
         case CMP:

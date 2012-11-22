@@ -403,6 +403,17 @@ namespace mongo {
         bool operator==( const BSONObj& other ) const { return equal( other ); }
         bool operator!=(const BSONObj& other) const { return !operator==( other); }
 
+        /* Matcher::valuesMatch() assumes a certain pattern for the values of MatchType.
+         * The following bits must be set to evaluate to true for a certain comparison result
+         *
+         *      > = <
+         * LT   0 0 1
+         * LTE  0 1 1
+         * GTE  1 1 0
+         * GT   1 0 0
+         *
+         * The T-versions add the pattern 100*
+         */
         enum MatchType {
             Equality = 0,
             LT = 0x1,
@@ -424,6 +435,11 @@ namespace mongo {
             opWITHIN = 0x14,
             opMAX_DISTANCE = 0x15,
             opINTERSECT = 0x16,
+            opNEWNEAR = 0x17,
+            TLT = 0x21,
+            TLTE = 0x23,
+            TGTE = 0x26,
+            TGT = 0x24
         };
 
         /** add all elements of the object to the specified vector */

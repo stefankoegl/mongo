@@ -208,6 +208,11 @@ namespace mongo {
             LT = 4, // return true for a < b, false otherwise
             LTE = 5, // return true for a <= b, false otherwise
             CMP = 6, // return -1, 0, 1 for a < b, a == b, a > b
+            TGT = 7, // return true for a > b, false otherwise (null > x, if x != null)
+            TGTE = 8, // return true for a >= b, false otherwise (null > x, if x != null)
+            TLT = 9, // return true for a < b, false otherwise (null > x, if x != null)
+            TLTE = 10, // return true for a <= b, false otherwise (null > x, if x != null)
+            TCMP = 11, // return -1, 0, 1 for a < b, a == b, a > b (null > x, if x != null)
         };
 
         static int signum(int i);
@@ -405,6 +410,11 @@ namespace mongo {
         static intrusive_ptr<ExpressionNary> createGte();
         static intrusive_ptr<ExpressionNary> createLt();
         static intrusive_ptr<ExpressionNary> createLte();
+        static intrusive_ptr<ExpressionNary> createTmpCmp();
+        static intrusive_ptr<ExpressionNary> createTmpGt();
+        static intrusive_ptr<ExpressionNary> createTmpGte();
+        static intrusive_ptr<ExpressionNary> createTmpLt();
+        static intrusive_ptr<ExpressionNary> createTmpLte();
 
     private:
         friend class ExpressionFieldRange;

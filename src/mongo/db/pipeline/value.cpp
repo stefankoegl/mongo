@@ -567,7 +567,7 @@ namespace mongo {
         } // switch(getType())
     }
 
-    int Value::compare(const Value& rL, const Value& rR) {
+    int Value::compare(const Value& rL, const Value& rR, bool nullSmallest) {
         // missing is treated as undefined for compatibility with BSONObj::woCompare
         BSONType lType = rL.missing() ? Undefined : rL.getType();
         BSONType rType = rR.missing() ? Undefined : rR.getType();
@@ -590,11 +590,11 @@ namespace mongo {
         
         if (lType == jstNULL) {
             if (rType == Undefined)
-                return 1;
+                return nullSmallest ? 1 : -1;
             if (rType == jstNULL)
                 return 0;
 
-            return -1;
+            return nullSmallest ? -1 : 1;
         }
 
         if ((rType == Undefined) || (rType == jstNULL)) {
@@ -602,7 +602,7 @@ namespace mongo {
               We know the left value isn't Undefined, because of the above.
               Count a NULL value as greater than an undefined one.
             */
-            return 1;
+            return nullSmallest ? 1 : -1;
         }
 
         /* if the comparisons are numeric, prepare to promote the values */

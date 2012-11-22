@@ -295,7 +295,11 @@ namespace mongo {
         case BSONObj::GT:
         case BSONObj::GTE:
         case BSONObj::LT:
-        case BSONObj::LTE: {
+        case BSONObj::LTE:
+        case BSONObj::TGT:
+        case BSONObj::TGTE:
+        case BSONObj::TLT:
+        case BSONObj::TLTE: {
             shared_ptr< BSONObjBuilder > b( new BSONObjBuilder() );
             _builders.push_back( b );
             b->appendAs(fe, e.fieldName());
@@ -658,10 +662,31 @@ namespace mongo {
             return bm._type == l.type();
         }
 
+        int c;
+
+        // treat null larger as any other value
+        if ( op == BSONObj::TLT || op == BSONObj::TLTE ||
+             op == BSONObj::TGT || op == BSONObj::TGTE )
+        {
+            if (l.canonicalType() == 5)
+            {
+                c = (r.canonicalType() == 5) ? 0 : 1;
+                int z = 1 << (c+1);
+                return (op & z);
+            }
+
+            else if ( r.canonicalType() == 5 )
+            {
+                c = -1;
+                int z = 1 << (c+1);
+                return (op & z);
+            }
+        }
+
         /* check LT, GTE, ... */
         if ( l.canonicalType() != r.canonicalType() )
             return false;
-        int c = compareElementValues(l, r);
+        c = compareElementValues(l, r);
         if ( c < -1 ) c = -1;
         if ( c > 1 ) c = 1;
         int z = 1 << (c+1);

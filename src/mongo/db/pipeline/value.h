@@ -149,7 +149,7 @@ namespace mongo {
          *           zero, depending on whether lhs < rhs, lhs == rhs, or lhs > rhs
          *  Warning: may return values other than -1, 0, or 1
          */
-        static int compare(const Value& lhs, const Value& rhs);
+        static int compare(const Value& lhs, const Value& rhs, bool nullSmallest = true);
 
         friend
         bool operator==(const Value& v1, const Value& v2) {
