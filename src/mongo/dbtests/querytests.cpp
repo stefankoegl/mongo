@@ -314,7 +314,7 @@ namespace QueryTests {
         }
         void run() {
             const char *ns = "unittests.querytests.TailableDelete";
-            client().createCollection( ns, 8192, true, 2 );
+            client().createCollection( ns, 8192, true, false, 2 );
             insert( ns, BSON( "a" << 0 ) );
             insert( ns, BSON( "a" << 1 ) );
             auto_ptr< DBClientCursor > c = client().query( ns, Query().hint( BSON( "$natural" << 1 ) ), 2, 0, 0, QueryOption_CursorTailable );

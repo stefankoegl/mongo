@@ -48,7 +48,7 @@ namespace DirectClientTests {
     public:
         virtual void run() {
             for( int pass=0; pass < 3; pass++ ) {
-                client().createCollection(ns, 1024 * 1024, true, 999);
+                client().createCollection(ns, 1024 * 1024, true, false, 999);
                 for( int j =0; j < pass*3; j++ )
                     client().insert(ns, BSON("x" << j));
 
