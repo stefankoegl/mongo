@@ -344,7 +344,6 @@ namespace mongo {
 
             string index = nsToDatabase(ns).append(".system.indexes");
             theDataFileMgr.insertWithObjMod(index.c_str(), indexInfo, false);
-            d->addIndex(ns);
         }
 
         bool isFreeList = strstr(ns, FREELIST_NS) != 0;
