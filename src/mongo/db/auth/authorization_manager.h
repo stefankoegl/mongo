@@ -20,7 +20,6 @@
 
 #include "mongo/base/disallow_copying.h"
 #include "mongo/base/status.h"
-#include "mongo/client/dbclientinterface.h"
 #include "mongo/db/auth/acquired_privilege.h"
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
@@ -32,6 +31,16 @@
 namespace mongo {
 
     /**
+     * Internal secret key info.
+     */
+    struct AuthInfo {
+        AuthInfo();
+        string user;
+        string pwd;
+    };
+    extern AuthInfo internalSecurity; // set at startup and not changed after initialization.
+
+    /**
      * Contains all the authorization logic for a single client connection.  It contains a set of
      * the principals which have been authenticated, as well as a set of privileges that have been
      * granted by those principals to perform various actions.
@@ -41,16 +50,13 @@ namespace mongo {
     class AuthorizationManager {
         MONGO_DISALLOW_COPYING(AuthorizationManager);
     public:
+
+        static const std::string SERVER_RESOURCE_NAME;
+        static const std::string CLUSTER_RESOURCE_NAME;
+
         // Takes ownership of the externalState.
         explicit AuthorizationManager(AuthExternalState* externalState);
         ~AuthorizationManager();
-
-        // adminDBConnection is a connection that can be used to access the admin database.  It is
-        // used to determine if there are any admin users configured for the cluster, and thus if
-        // localhost connections should be given special admin access.
-        // This function *must* be called on any new AuthorizationManager, after the constructor but
-        // before any other methods are called on the AuthorizationManager.
-        Status initialize(DBClientBase* adminDBConnection);
 
         // Takes ownership of the principal (by putting into _authenticatedPrincipals).
         void addAuthorizedPrincipal(Principal* principal);
@@ -67,11 +73,6 @@ namespace mongo {
         // Grant this connection the given privilege.
         Status acquirePrivilege(const AcquiredPrivilege& privilege);
 
-        // This should be called when the connection gets authenticated as the internal user.
-        // This grants a privilege on all the actions for the internal role, with the
-        // internalPrincipal as the principal.
-        void grantInternalAuthorization();
-
         // Checks if this connection has the privileges required to perform the given action
         // on the given resource.  Contains all the authorization logic including handling things
         // like the localhost exception.  If it is authorized, returns the principal that granted
@@ -80,15 +81,23 @@ namespace mongo {
         // exception, it returns a pointer to specialAdminPrincipal.
         const Principal* checkAuthorization(const std::string& resource, ActionType action) const;
 
+        // Parses the privilege documents and acquires all privileges that the privilege document
+        // grants
+        Status acquirePrivilegesFromPrivilegeDocument(const std::string& dbname,
+                                                      Principal* principal,
+                                                      const BSONObj& privilegeDocument);
+
         // Returns the privilege document with the given user name in the given database. Currently
         // this information comes from the system.users collection in that database.
-        static Status getPrivilegeDocument(DBClientBase* conn,
-                                           const std::string& dbname,
-                                           const std::string& userName,
-                                           BSONObj* result);
+        Status getPrivilegeDocument(const std::string& dbname,
+                                    const std::string& userName,
+                                    BSONObj* result) {
+            return _externalState->getPrivilegeDocument(dbname, userName, result);
+        }
 
-        // Returns true if there exists at least one privilege document in the given database.
-        static bool hasPrivilegeDocument(DBClientBase* conn, const std::string& dbname);
+        // Given a database name and a readOnly flag return an ActionSet describing all the actions
+        // that an old-style user with those attributes should be given.
+        static ActionSet getActionsForOldStyleUser(const std::string& dbname, bool readOnly);
 
         // Parses the privilege document and returns a PrivilegeSet of all the Capabilities that
         // the privilege document grants.
@@ -113,7 +122,6 @@ namespace mongo {
         PrivilegeSet _acquiredPrivileges;
         // All principals who have been authenticated on this connection
         PrincipalSet _authenticatedPrincipals;
-        bool _initialized;
     };
 
 } // namespace mongo

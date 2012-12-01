@@ -16,6 +16,12 @@
  */
 
 #include "pch.h"
+
+#include "mongo/client/connpool.h"
+#include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/auth_external_state_s.h"
+#include "mongo/s/shard.h"
+#include "mongo/s/grid.h"
 #include "request.h"
 #include "client_info.h"
 #include "../db/dbhelpers.h"
@@ -53,6 +59,11 @@ namespace mongo {
     }
     Client::~Client() {}
     bool Client::shutdown() { return true; }
+
+    void ClientBasic::initializeAuthorizationManager() {
+        AuthorizationManager* authManager = new AuthorizationManager(new AuthExternalStateMongos);
+        setAuthorizationManager(authManager);
+    }
 
     Client& Client::initThread(const char *desc, AbstractMessagingPort *mp) {
         // mp is non-null only for client connections, and mongos uses ClientInfo for those
