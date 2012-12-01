@@ -31,7 +31,17 @@ namespace mongo {
 
         /* move original _id into an transaction-time _id object */
         BSONObjBuilder temporalId(bb.subobjStart("_id"));
-        temporalId.append(obj.getField("_id"));
+
+        BSONElement idElem = obj.getField("_id");
+        if( idElem.eoo() )
+        {
+            temporalId.appendOID("_id", 0, true );
+        }
+        else
+        {
+            temporalId.append(idElem);
+        }
+
         temporalId.appendTimestamp("transaction_start", val, inc);
         temporalId.done();
 

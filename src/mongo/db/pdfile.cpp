@@ -1534,7 +1534,7 @@ namespace mongo {
             BSONElement idField = io.getField( "_id" );
             uassert( 10099 ,  "_id cannot be an array", idField.type() != Array );
             // we don't add _id for capped collections in local as they don't have an _id index
-            if( idField.eoo() && !wouldAddIndex &&
+            if( idField.eoo() && !wouldAddIndex && !d->hasTransactionTime() &&
                 !str::equals( nsToDatabase( ns ).c_str() , "local" ) && d->haveIdIndex() ) {
                 if( addedID )
                     *addedID = true;
@@ -1544,15 +1544,15 @@ namespace mongo {
             }
 
             BSONElementManipulator::lookForTimestamps( io );
-        }
 
-        BSONObj ttObj;
-        if( !god && d->hasTransactionTime() )
-        {
-            ttObj = BSONObj((const char *) obuf);
-            ttObj = wrapObjectId(ttObj);
-			obuf = ttObj.objdata();
-			len = ttObj.objsize();
+            if( d->hasTransactionTime() )
+            {
+                BSONObj ttObj;
+                ttObj = BSONObj((const char *) obuf);
+                ttObj = wrapObjectId(ttObj);
+                obuf = ttObj.objdata();
+                len = ttObj.objsize();
+            }
         }
 
         int lenWHdr = d->getRecordAllocationSize( len + Record::HeaderSize );
