@@ -1526,6 +1526,7 @@ namespace mongo {
         }
 
         int addID = 0; // 0 if not adding _id; if adding, the length of that new element
+        BSONObj ttObj;
         if( !god ) {
             /* Check if we have an _id field. If we don't, we'll add it.
                Note that btree buckets which we insert aren't BSONObj's, but in that case god==true.
@@ -1547,7 +1548,6 @@ namespace mongo {
 
             if( d->hasTransactionTime() )
             {
-                BSONObj ttObj;
                 ttObj = BSONObj((const char *) obuf);
                 ttObj = wrapObjectId(ttObj);
                 obuf = ttObj.objdata();
