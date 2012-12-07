@@ -16,6 +16,7 @@ Import("darwin windows solaris linux nix")
 
 env.SConscript(['base/SConscript',
                 'db/auth/SConscript',
+                'db/ops/SConscript',
                 'platform/SConscript',
                 's/SConscript',
                 'unittest/SConscript'])
@@ -40,6 +41,8 @@ env.StaticLibrary('foundation',
                            '$BUILD_DIR/mongo/platform/platform',
                            '$BUILD_DIR/third_party/shim_allocator',
                            '$BUILD_DIR/third_party/shim_boost'])
+
+env.CppUnitTest('text_test', 'util/text_test.cpp', LIBDEPS=['foundation'])
 
 env.StaticLibrary('stringutils', ['util/stringutils.cpp', 'util/base64.cpp',])
 
@@ -73,6 +76,9 @@ env.CppUnitTest('mutable_bson_heap_test', ['bson/mutable/mutable_bson_heap_test.
                  LIBDEPS=['bson'])
 
 env.CppUnitTest('mutable_bson_builder_test', ['bson/mutable/mutable_bson_builder_test.cpp'],
+                LIBDEPS=['bson'])
+
+env.CppUnitTest('mutable_bson_algo_test', ['bson/mutable/mutable_bson_algo_test.cpp'],
                 LIBDEPS=['bson'])
 
 env.CppUnitTest('safe_num_test', ['util/safe_num_test.cpp'],
@@ -258,7 +264,11 @@ coreServerFiles = [ "db/common.cpp",
                     "db/stats/service_stats.cpp",
                     ]
 
-env.StaticLibrary('ntservice', ['util/ntservice.cpp'])
+env.StaticLibrary('ntservice', ['util/ntservice.cpp'], LIBDEPS=['foundation'])
+if windows:
+    env.CppUnitTest('ntservice_test', 'util/ntservice_test.cpp',
+                    LIBDEPS=['ntservice'],
+                    LIBS=['shell32', env['LIBS']])
 
 scripting_common_files = [ "scripting/engine.cpp",
                            "scripting/utils.cpp",
@@ -404,7 +414,7 @@ serverOnlyFiles = [ "db/curop.cpp",
                     "db/pipeline/document_source_cursor.cpp",
                     "db/driverHelpers.cpp" ]
 
-env.Library( "dbcmdline", "db/cmdline.cpp", LIBDEPS=['bson'] )
+env.Library( "dbcmdline", "db/cmdline.cpp", LIBDEPS=['bson', 'server_parameters'] )
 env.CppUnitTest('cmdline_test', 'db/cmdline_test.cpp', LIBDEPS=['dbcmdline'])
 
 env.Library('stacktrace', 'util/stacktrace.cpp')
@@ -418,6 +428,7 @@ serverOnlyFiles += mmapFiles
 serverOnlyFiles += [ "db/stats/snapshots.cpp" ]
 
 env.Library( "coreshard", [ "client/distlock.cpp",
+                            "s/balancer_lock.cpp",
                             "s/config.cpp",
                             "s/grid.cpp",
                             "s/chunk.cpp",
@@ -448,7 +459,7 @@ mongosLibraryFiles = [
 env.Library( "mongoscore" , mongosLibraryFiles, LIBDEPS=['db/auth/authmongos'] )
 
 env.CppUnitTest( "balancer_policy_test" , [ "s/balancer_policy_tests.cpp" ] ,
-                 LIBDEPS=["mongoscore", "coreshard","mongocommon","coreserver","coredb","dbcmdline","mongodandmongos"] ,
+                 LIBDEPS=["mongoscore", "coreshard", "mongocommon","coreserver","coredb","dbcmdline","mongodandmongos"] ,
                  NO_CRUTCH=True)
 
 env.CppUnitTest("scoped_db_conn_test", [ "client/scoped_db_conn_test.cpp" ],
@@ -598,14 +609,15 @@ if has_option( "sharedclient" ):
 
 # dbtests test binary
 env.StaticLibrary('testframework', ['dbtests/framework.cpp'], LIBDEPS=['unittest/unittest'])
+
 env.StaticLibrary('mocklib', [
+        'dbtests/mock/mock_conn_registry.cpp',
         'dbtests/mock/mock_dbclient_connection.cpp',
+        'dbtests/mock/mock_dbclient_cursor.cpp',
         'dbtests/mock/mock_remote_db_server.cpp',
         'dbtests/mock/mock_replica_set.cpp'
     ],
-    LIBDEPS=['unittest/unittest', 'mongocommon'])
-
-
+    LIBDEPS=['mongocommon'])
 
 test = testEnv.Install(
     '#/',
@@ -639,7 +651,7 @@ if darwin or env["_HAVEPCAP"]:
         sniffEnv.Append( LIBS=[ "wpcap" ] )
 
     sniffEnv.Install( '#/', sniffEnv.Program( "mongosniff", "tools/sniffer.cpp",
-                                              LIBDEPS=["gridfs", "serveronly", "coreserver", "coredb", "notmongodormongos"] ) )
+                                              LIBDEPS=["gridfs", "serveronly", "coreserver", "coredb", "notmongodormongos"]))
 
 # --- shell ---
 

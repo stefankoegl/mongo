@@ -61,17 +61,22 @@ namespace mongo {
         // Takes ownership of the principal (by putting into _authenticatedPrincipals).
         void addAuthorizedPrincipal(Principal* principal);
 
-        // Removes and deletes the given principal from the set of authenticated principals.
-        // Return an error Status if the given principal isn't a member of the
-        // _authenticatedPrincipals set.
-        Status removeAuthorizedPrincipal(const Principal* principal);
-
-        // Returns NULL if not found
+        // Returns the authenticated principal with the given username whose credential information
+        // comes from userSource (will generally be a database name or $sasl).  Returns NULL
+        // if no such user is found.
         // Ownership of the returned Principal remains with _authenticatedPrincipals
-        Principal* lookupPrincipal(const std::string& name) const;
+        Principal* lookupPrincipal(const std::string& name, const std::string& userSource);
+
+        // Removes any authenticated principals whose authorization credentials came from the given
+        // database, and revokes any privileges that were granted via that principal.
+        void logoutDatabase(const std::string& dbname);
 
         // Grant this connection the given privilege.
         Status acquirePrivilege(const AcquiredPrivilege& privilege);
+
+        // Adds a new principal with the given principal name and authorizes it with full access.
+        // Used to grant internal threads full access.
+        void grantInternalAuthorization(const std::string& principalName);
 
         // Checks if this connection has the privileges required to perform the given action
         // on the given resource.  Contains all the authorization logic including handling things
@@ -80,6 +85,9 @@ namespace mongo {
         // not because of a standard user Principal but for a special reason such as the localhost
         // exception, it returns a pointer to specialAdminPrincipal.
         const Principal* checkAuthorization(const std::string& resource, ActionType action) const;
+        // Same as above but takes an ActionSet instead of a single ActionType.  The one principal
+        // returned must be able to perform all the actions in the ActionSet on the given resource.
+        const Principal* checkAuthorization(const std::string& resource, ActionSet actions) const;
 
         // Parses the privilege documents and acquires all privileges that the privilege document
         // grants

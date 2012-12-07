@@ -912,6 +912,10 @@ namespace mongo {
         return n;
     }
 
+    void DBClientConnection::setReplSetClientCallback(DBClientReplicaSet* rsClient) {
+        clientSet = rsClient;
+    }
+
     unsigned long long DBClientConnection::query(
             boost::function<void(DBClientCursorBatchIterator &)> f,
             const string& ns,
