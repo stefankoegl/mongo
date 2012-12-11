@@ -25,6 +25,8 @@ namespace mongo {
     BSONObj addTemporalCriteria(BSONObj query);
 
     BSONObj addTemporalOrder(BSONObj order);
+
+    BSONObj getTTLQuery(const char* fieldName, long long expireField);
 }
 
 #endif /* TTIME_H_ */

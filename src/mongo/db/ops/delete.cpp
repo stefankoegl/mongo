@@ -32,7 +32,7 @@ namespace mongo {
        justOne: stop after 1 match
        god:     allow access to system namespaces, and don't yield
     */
-    long long deleteObjects(const char *ns, BSONObj pattern, bool justOne, bool logop, bool god, RemoveSaver * rs ) {
+    long long deleteObjects(const char *ns, BSONObj pattern, bool justOne, bool logop, bool god, RemoveSaver * rs, bool purge ) {
         if( !god ) {
             if ( strstr(ns, ".system.") ) {
                 /* note a delete from system.indexes would corrupt the db
@@ -52,7 +52,9 @@ namespace mongo {
             return 0;
         uassert( 10101 ,  "can't remove from a capped collection" , ! d->isCapped() );
 
-        if( d->hasTransactionTime() )
+        uassert( 99199,   "can't use purge with non-temporal collection", !purge || d->hasTransactionTime() );
+
+        if( d->hasTransactionTime() && !purge )
         {
             pattern = addCurrentVersionCriterion(pattern);
         }
@@ -137,7 +139,7 @@ namespace mongo {
             if ( rs )
                 rs->goingToDelete( rloc.obj() /*cc->c->current()*/ );
 
-            if( d->hasTransactionTime() )
+            if( d->hasTransactionTime() && !purge )
             {
                 BSONObj onDisk = BSONObj::make(rloc.rec());
 

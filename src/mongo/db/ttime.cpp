@@ -207,5 +207,27 @@ namespace mongo {
 
         return order;
     }
+
+    BSONObj getTTLQuery(const char* fieldName, long long expireField)
+    {
+        BSONObjBuilder b;
+        BSONArrayBuilder or_(b.subarrayStart("$or"));
+        BSONObjBuilder date(or_.subobjStart());
+        BSONObjBuilder dateField(date.subobjStart(fieldName));
+        dateField.appendDate( "$lt" , curTimeMillis64() - ( 1000 * expireField ) );
+        dateField.done();
+        date.done();
+
+        BSONObjBuilder timestamp(or_.subobjStart());
+        BSONObjBuilder timestampField(date.subobjStart(fieldName));
+        // we don't need a unique timestamp here, so we don't need to lock in OpTime.now()
+        timestampField.appendTimestamp( "$tlt", 1000 * (time(0) - expireField), 0 );
+        timestampField.done();
+        timestamp.done();
+
+        or_.done();
+
+        return b.obj();
+    }
 }
 
