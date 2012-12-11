@@ -371,6 +371,9 @@ namespace mongo {
                     }
                     else if ( d->hasTransactionTime() )
                     {
+                        massert( 99999, "Can't modify transaction_start field", !useMods->haveModForField("_id.transaction_start"));
+                        massert( 99998, "Can't modify transaction_end field", !useMods->haveModForField("transaction_end"));
+
                         if ( rs )
                             rs->goingToDelete( onDisk );
 
@@ -457,6 +460,9 @@ namespace mongo {
 
                 if( d->hasTransactionTime() )
                 {
+                    massert( 99997, "Update can't contain transaction_start field", updateobj.getFieldDotted("_id.transaction_start").eoo());
+                    massert( 99996, "Update can't contain transaction_end field", !updateobj.hasField("transaction_end"));
+
                     Record* r = c->_current();
                     BSONObj onDisk = BSONObj::make(r);
 
