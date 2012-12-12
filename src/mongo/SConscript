@@ -30,6 +30,7 @@ env.StaticLibrary('foundation',
                   [ 'util/assert_util.cpp',
                     'util/concurrency/mutexdebugger.cpp',
                     'util/debug_util.cpp',
+                    'util/exception_filter_win32.cpp',
                     'util/log.cpp',
                     'util/signal_handlers.cpp',
                     'util/text.cpp',
@@ -68,6 +69,9 @@ env.StaticLibrary('bson', [
         'stringutils',
         '$BUILD_DIR/mongo/platform/platform',
         ])
+
+env.CppUnitTest('builder_test', ['bson/util/builder_test.cpp'],
+                LIBDEPS=['bson'])
 
 env.CppUnitTest('mutable_bson_test', ['bson/mutable/mutable_bson_test.cpp'],
                  LIBDEPS=['bson'])
@@ -287,8 +291,7 @@ if usesm:
 elif usev8:
     env.StaticLibrary('scripting', scripting_common_files + ['scripting/engine_v8.cpp',
                                                              'scripting/v8_db.cpp',
-                                                             'scripting/v8_utils.cpp',
-                                                             'scripting/v8_wrapper.cpp'],
+                                                             'scripting/v8_utils.cpp',],
                        LIBDEPS=['bson_template_evaluator', '$BUILD_DIR/third_party/shim_v8'])
 else:
     env.StaticLibrary('scripting', scripting_common_files + ['scripting/engine_none.cpp'],
@@ -387,6 +390,7 @@ serverOnlyFiles = [ "db/curop.cpp",
                     "db/scanandorder.cpp",
                     "db/explain.cpp",
                     "db/geo/2d.cpp",
+                    "db/geo/geonear.cpp",
                     "db/geo/haystack.cpp",
                     "db/geo/s2common.cpp",
                     "db/geo/s2cursor.cpp",

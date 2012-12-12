@@ -17,6 +17,7 @@
 #include "mongo/db/auth/authorization_manager.h"
 
 #include <string>
+#include <vector>
 
 #include "mongo/base/init.h"
 #include "mongo/base/status.h"
@@ -43,7 +44,6 @@ namespace mongo {
     const std::string AuthorizationManager::CLUSTER_RESOURCE_NAME = "$CLUSTER";
 
     namespace {
-        Principal specialAdminPrincipal("special", "local");
         const std::string ADMIN_DBNAME = "admin";
         const std::string LOCAL_DBNAME = "local";
         const std::string WILDCARD_DBNAME = "*";
@@ -55,8 +55,12 @@ namespace mongo {
     ActionSet readWriteRoleActions;
     ActionSet userAdminRoleActions;
     ActionSet dbAdminRoleActions;
-    ActionSet serverAdminRoleActions;
-    ActionSet clusterAdminRoleActions;
+    // Separate serverAdmin and clusterAdmin read-only and read-write action for backwards
+    // compatibility with old-style read-only admin users.
+    ActionSet serverAdminRoleReadActions;
+    ActionSet serverAdminRoleWriteActions;
+    ActionSet clusterAdminRoleReadActions;
+    ActionSet clusterAdminRoleWriteActions;
     // Can only be performed by internal connections.  Nothing ever explicitly grants these actions,
     // but they're included when calling addAllActions on an ActionSet, which is how internal
     // connections are granted their privileges.
@@ -98,61 +102,69 @@ namespace mongo {
         dbAdminRoleActions.addAction(ActionType::convertToCapped);
         dbAdminRoleActions.addAction(ActionType::dbStats);
         dbAdminRoleActions.addAction(ActionType::dropCollection);
+        dbAdminRoleActions.addAction(ActionType::profileEnable);
+        dbAdminRoleActions.addAction(ActionType::profileRead);
         dbAdminRoleActions.addAction(ActionType::reIndex); // TODO: Should readWrite have this also? This isn't consistent with ENSURE_INDEX and DROP_INDEXES
         dbAdminRoleActions.addAction(ActionType::renameCollection);
         dbAdminRoleActions.addAction(ActionType::validate);
 
         // Server admin role
+        serverAdminRoleReadActions.addAction(ActionType::connPoolStats);
+        serverAdminRoleReadActions.addAction(ActionType::connPoolSync);
+        serverAdminRoleReadActions.addAction(ActionType::getCmdLineOpts);
+        serverAdminRoleReadActions.addAction(ActionType::getLog);
+        serverAdminRoleReadActions.addAction(ActionType::getParameter);
+        serverAdminRoleReadActions.addAction(ActionType::getShardMap);
+        serverAdminRoleReadActions.addAction(ActionType::hostInfo);
+        serverAdminRoleReadActions.addAction(ActionType::listDatabases);
+        serverAdminRoleReadActions.addAction(ActionType::logRotate);
+        serverAdminRoleReadActions.addAction(ActionType::replSetFreeze);
+        serverAdminRoleReadActions.addAction(ActionType::replSetGetStatus);
+        serverAdminRoleReadActions.addAction(ActionType::replSetMaintenance);
+        serverAdminRoleReadActions.addAction(ActionType::replSetStepDown);
+        serverAdminRoleReadActions.addAction(ActionType::replSetSyncFrom);
+        serverAdminRoleReadActions.addAction(ActionType::setParameter);
+        serverAdminRoleReadActions.addAction(ActionType::serverStatus);
+        serverAdminRoleReadActions.addAction(ActionType::shutdown);
+        serverAdminRoleReadActions.addAction(ActionType::top);
+        serverAdminRoleReadActions.addAction(ActionType::touch);
+        serverAdminRoleReadActions.addAction(ActionType::unlock);
+
         // TODO: should applyOps go here?
-        serverAdminRoleActions.addAction(ActionType::closeAllDatabases);
-        serverAdminRoleActions.addAction(ActionType::connPoolStats);
-        serverAdminRoleActions.addAction(ActionType::connPoolSync);
-        serverAdminRoleActions.addAction(ActionType::cpuProfiler);
-        serverAdminRoleActions.addAction(ActionType::cursorInfo);
-        serverAdminRoleActions.addAction(ActionType::diagLogging);
-        serverAdminRoleActions.addAction(ActionType::fsync);
-        serverAdminRoleActions.addAction(ActionType::getCmdLineOpts);
-        serverAdminRoleActions.addAction(ActionType::getLog);
-        serverAdminRoleActions.addAction(ActionType::getParameter);
-        serverAdminRoleActions.addAction(ActionType::getShardMap);
-        serverAdminRoleActions.addAction(ActionType::getShardVersion);
-        serverAdminRoleActions.addAction(ActionType::hostInfo);
-        serverAdminRoleActions.addAction(ActionType::listDatabases);
-        serverAdminRoleActions.addAction(ActionType::logRotate);
-        serverAdminRoleActions.addAction(ActionType::profile); // TODO: should this be dbAdmin?
-        serverAdminRoleActions.addAction(ActionType::repairDatabase);
-        serverAdminRoleActions.addAction(ActionType::replSetFreeze);
-        serverAdminRoleActions.addAction(ActionType::replSetGetStatus);
-        serverAdminRoleActions.addAction(ActionType::replSetInitiate);
-        serverAdminRoleActions.addAction(ActionType::replSetMaintenance);
-        serverAdminRoleActions.addAction(ActionType::replSetReconfig);
-        serverAdminRoleActions.addAction(ActionType::replSetStepDown);
-        serverAdminRoleActions.addAction(ActionType::replSetSyncFrom);
-        serverAdminRoleActions.addAction(ActionType::resync);
-        serverAdminRoleActions.addAction(ActionType::setParameter);
-        serverAdminRoleActions.addAction(ActionType::shutdown);
-        serverAdminRoleActions.addAction(ActionType::top);
-        serverAdminRoleActions.addAction(ActionType::touch);
+        serverAdminRoleWriteActions.addAction(ActionType::closeAllDatabases);
+        serverAdminRoleWriteActions.addAction(ActionType::cpuProfiler);
+        serverAdminRoleWriteActions.addAction(ActionType::cursorInfo);
+        serverAdminRoleWriteActions.addAction(ActionType::diagLogging);
+        serverAdminRoleWriteActions.addAction(ActionType::fsync);
+        serverAdminRoleWriteActions.addAction(ActionType::inprog);
+        serverAdminRoleWriteActions.addAction(ActionType::killop);
+        serverAdminRoleWriteActions.addAction(ActionType::repairDatabase);
+        serverAdminRoleWriteActions.addAction(ActionType::replSetInitiate);
+        serverAdminRoleWriteActions.addAction(ActionType::replSetReconfig);
+        serverAdminRoleWriteActions.addAction(ActionType::resync);
 
         // Cluster admin role
-        clusterAdminRoleActions.addAction(ActionType::addShard);
-        clusterAdminRoleActions.addAction(ActionType::dropDatabase); // TODO: Should there be a CREATE_DATABASE also?
-        clusterAdminRoleActions.addAction(ActionType::enableSharding);
-        clusterAdminRoleActions.addAction(ActionType::flushRouterConfig);
-        clusterAdminRoleActions.addAction(ActionType::listShards);
-        clusterAdminRoleActions.addAction(ActionType::moveChunk);
-        clusterAdminRoleActions.addAction(ActionType::movePrimary);
-        clusterAdminRoleActions.addAction(ActionType::netstat);
-        clusterAdminRoleActions.addAction(ActionType::removeShard);
-        clusterAdminRoleActions.addAction(ActionType::setShardVersion); // TODO: should this be internal?
-        clusterAdminRoleActions.addAction(ActionType::shardCollection);
-        clusterAdminRoleActions.addAction(ActionType::shardingState);
-        clusterAdminRoleActions.addAction(ActionType::split);
-        clusterAdminRoleActions.addAction(ActionType::splitChunk);
-        clusterAdminRoleActions.addAction(ActionType::splitVector);
-        clusterAdminRoleActions.addAction(ActionType::unsetSharding);
+        clusterAdminRoleReadActions.addAction(ActionType::getShardVersion);
+        clusterAdminRoleReadActions.addAction(ActionType::listShards);
+        clusterAdminRoleReadActions.addAction(ActionType::netstat);
+        clusterAdminRoleReadActions.addAction(ActionType::setShardVersion); // TODO: should this be internal?
+        clusterAdminRoleReadActions.addAction(ActionType::splitVector);
+        clusterAdminRoleReadActions.addAction(ActionType::unsetSharding);
+
+        clusterAdminRoleWriteActions.addAction(ActionType::addShard);
+        clusterAdminRoleWriteActions.addAction(ActionType::dropDatabase); // TODO: Should there be a CREATE_DATABASE also?
+        clusterAdminRoleWriteActions.addAction(ActionType::enableSharding);
+        clusterAdminRoleWriteActions.addAction(ActionType::flushRouterConfig);
+        clusterAdminRoleWriteActions.addAction(ActionType::moveChunk);
+        clusterAdminRoleWriteActions.addAction(ActionType::movePrimary);
+        clusterAdminRoleWriteActions.addAction(ActionType::removeShard);
+        clusterAdminRoleWriteActions.addAction(ActionType::shardCollection);
+        clusterAdminRoleWriteActions.addAction(ActionType::shardingState);
+        clusterAdminRoleWriteActions.addAction(ActionType::split);
+        clusterAdminRoleWriteActions.addAction(ActionType::splitChunk);
 
         // Internal commands
+        internalActions.addAction(ActionType::clone);
         internalActions.addAction(ActionType::handshake);
         internalActions.addAction(ActionType::mapReduceShardedFinish);
         internalActions.addAction(ActionType::replSetElect);
@@ -181,9 +193,8 @@ namespace mongo {
         _authenticatedPrincipals.add(principal);
     }
 
-    Principal* AuthorizationManager::lookupPrincipal(const std::string& name,
-                                                     const std::string& userSource) {
-        return _authenticatedPrincipals.lookup(name, userSource);
+    Principal* AuthorizationManager::lookupPrincipal(const PrincipalName& name) const {
+        return _authenticatedPrincipals.lookup(name);
     }
 
     void AuthorizationManager::logoutDatabase(const std::string& dbname) {
@@ -194,13 +205,13 @@ namespace mongo {
 
     Status AuthorizationManager::acquirePrivilege(const AcquiredPrivilege& privilege) {
         const Principal* principal = privilege.getPrincipal();
-        if (!_authenticatedPrincipals.lookup(principal->getName(), principal->getDBName())) {
+        if (!_authenticatedPrincipals.lookup(principal->getName())) {
             return Status(ErrorCodes::UserNotFound,
                           mongoutils::str::stream()
                                   << "No authenticated principle found with name: "
-                                  << principal->getName()
+                                  << principal->getName().getUser()
                                   << " from database "
-                                  << principal->getDBName(),
+                                  << principal->getName().getDB(),
                           0);
         }
 
@@ -210,7 +221,7 @@ namespace mongo {
     }
 
     void AuthorizationManager::grantInternalAuthorization(const std::string& principalName) {
-        Principal* principal = new Principal(principalName, "local");
+        Principal* principal = new Principal(PrincipalName(principalName, "local"));
         ActionSet actions;
         actions.addAllActions();
         AcquiredPrivilege privilege(Privilege("*", actions), principal);
@@ -220,9 +231,16 @@ namespace mongo {
         verify(status.isOK());
     }
 
+    bool AuthorizationManager::hasInternalAuthorization() const {
+        ActionSet allActions;
+        allActions.addAllActions();
+        return _acquiredPrivileges.getPrivilegeForActions("*", allActions);
+    }
+
     ActionSet AuthorizationManager::getActionsForOldStyleUser(const std::string& dbname,
                                                               bool readOnly) {
         ActionSet actions;
+        // Basic actions
         if (readOnly) {
             actions.addAllActionsFromSet(readRoleActions);
         }
@@ -230,10 +248,16 @@ namespace mongo {
             actions.addAllActionsFromSet(readWriteRoleActions);
             actions.addAllActionsFromSet(dbAdminRoleActions);
             actions.addAllActionsFromSet(userAdminRoleActions);
-
-            if (dbname == ADMIN_DBNAME || dbname == LOCAL_DBNAME) {
-                actions.addAllActionsFromSet(serverAdminRoleActions);
-                actions.addAllActionsFromSet(clusterAdminRoleActions);
+            actions.addAction(ActionType::dropDatabase);
+            actions.addAction(ActionType::repairDatabase);
+        }
+        // Admin actions
+        if (dbname == ADMIN_DBNAME || dbname == LOCAL_DBNAME) {
+            actions.addAllActionsFromSet(serverAdminRoleReadActions);
+            actions.addAllActionsFromSet(clusterAdminRoleReadActions);
+            if (!readOnly) {
+                actions.addAllActionsFromSet(serverAdminRoleWriteActions);
+                actions.addAllActionsFromSet(clusterAdminRoleWriteActions);
             }
         }
         return actions;
@@ -241,16 +265,16 @@ namespace mongo {
 
     Status AuthorizationManager::acquirePrivilegesFromPrivilegeDocument(
             const std::string& dbname, Principal* principal, const BSONObj& privilegeDocument) {
-        if (!_authenticatedPrincipals.lookup(principal->getName(), dbname)) {
+        if (!_authenticatedPrincipals.lookup(principal->getName())) {
             return Status(ErrorCodes::UserNotFound,
                           mongoutils::str::stream()
                                   << "No authenticated principle found with name: "
-                                  << principal->getName()
+                                  << principal->getName().getUser()
                                   << " from database "
-                                  << principal->getDBName(),
+                                  << principal->getName().getDB(),
                           0);
         }
-        if (principal->getName() == internalSecurity.user) {
+        if (principal->getName().getUser() == internalSecurity.user) {
             // Grant full access to internal user
             ActionSet allActions;
             allActions.addAllActions();
@@ -291,12 +315,12 @@ namespace mongo {
                                    << privilegeDocument,
                           0);
         }
-        if (privilegeDocument["user"].str() != principal->getName()) {
+        if (privilegeDocument["user"].str() != principal->getName().getUser()) {
             return Status(ErrorCodes::BadValue,
                           mongoutils::str::stream() << "Principal name from privilege document \""
                                   << privilegeDocument["user"].str()
                                   << "\" doesn't match name of provided Principal \""
-                                  << principal->getName()
+                                  << principal->getName().getUser()
                                   << "\"",
                           0);
         }
@@ -311,44 +335,146 @@ namespace mongo {
         return Status::OK();
     }
 
-    const Principal* AuthorizationManager::checkAuthorization(const std::string& resource,
-                                                              ActionType action) const {
+    bool AuthorizationManager::checkAuthorization(const std::string& resource,
+                                                  ActionType action) const {
 
         if (_externalState->shouldIgnoreAuthChecks()) {
-            return &specialAdminPrincipal;
+            return true;
         }
 
-        const AcquiredPrivilege* privilege;
-        privilege = _acquiredPrivileges.getPrivilegeForAction(nsToDatabase(resource), action);
-        if (privilege) {
-            return privilege->getPrincipal();
-        }
-        privilege = _acquiredPrivileges.getPrivilegeForAction(WILDCARD_DBNAME, action);
-        if (privilege) {
-            return privilege->getPrincipal();
-        }
-
-        return NULL; // Not authorized
+        if (_acquiredPrivileges.getPrivilegeForAction(nsToDatabase(resource), action))
+            return true;
+        if (_acquiredPrivileges.getPrivilegeForAction(WILDCARD_DBNAME, action))
+            return true;
+        return false;
     }
 
-    const Principal* AuthorizationManager::checkAuthorization(const std::string& resource,
-                                                              ActionSet actions) const {
+    bool AuthorizationManager::checkAuthorization(const std::string& resource,
+                                                  ActionSet actions) const {
 
         if (_externalState->shouldIgnoreAuthChecks()) {
-            return &specialAdminPrincipal;
+            return true;
         }
 
-        const AcquiredPrivilege* privilege;
-        privilege = _acquiredPrivileges.getPrivilegeForActions(nsToDatabase(resource), actions);
-        if (privilege) {
-            return privilege->getPrincipal();
-        }
-        privilege = _acquiredPrivileges.getPrivilegeForActions(WILDCARD_DBNAME, actions);
-        if (privilege) {
-            return privilege->getPrincipal();
-        }
+        if (_acquiredPrivileges.getPrivilegeForActions(nsToDatabase(resource), actions))
+            return true;
+        if (_acquiredPrivileges.getPrivilegeForActions(WILDCARD_DBNAME, actions))
+            return true;
 
-        return NULL; // Not authorized
+        return false;
+    }
+
+    Status AuthorizationManager::checkAuthForQuery(const std::string& ns) {
+        NamespaceString namespaceString(ns);
+        verify(!namespaceString.isCommand());
+        if (namespaceString.coll == "system.users") {
+            if (!checkAuthorization(ns, ActionType::userAdmin)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() <<
+                                      "unauthorized to read user information for database " <<
+                                      namespaceString.db,
+                              0);
+            }
+        }
+        else if (namespaceString.coll == "system.profile") {
+            if (!checkAuthorization(ns, ActionType::profileRead)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() << "unauthorized to read " <<
+                                      namespaceString.db << ".system.profile",
+                              0);
+            }
+        }
+        else {
+            if (!checkAuthorization(ns, ActionType::find)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() << "unauthorized for query on " << ns,
+                              0);
+            }
+        }
+        return Status::OK();
+    }
+
+    Status AuthorizationManager::checkAuthForInsert(const std::string& ns) {
+        NamespaceString namespaceString(ns);
+        if (namespaceString.coll == "system.users") {
+            if (!checkAuthorization(ns, ActionType::userAdmin)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() <<
+                                      "unauthorized to create user for database " <<
+                                      namespaceString.db,
+                              0);
+            }
+        }
+        else {
+            if (!checkAuthorization(ns, ActionType::insert)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() << "unauthorized for insert on " << ns,
+                              0);
+            }
+        }
+        return Status::OK();
+    }
+
+    Status AuthorizationManager::checkAuthForUpdate(const std::string& ns, bool upsert) {
+        NamespaceString namespaceString(ns);
+        if (namespaceString.coll == "system.users") {
+            if (!checkAuthorization(ns, ActionType::userAdmin)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() <<
+                                      "not authorized to update user information for database " <<
+                                      namespaceString.db,
+                              0);
+            }
+        }
+        else {
+            if (!checkAuthorization(ns, ActionType::update)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() << "not authorized for update on " << ns,
+                              0);
+            }
+            if (upsert && !checkAuthorization(ns, ActionType::insert)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() << "not authorized for upsert on " << ns,
+                              0);
+            }
+        }
+        return Status::OK();
+    }
+
+    Status AuthorizationManager::checkAuthForDelete(const std::string& ns) {
+        NamespaceString namespaceString(ns);
+        if (namespaceString.coll == "system.users") {
+            if (!checkAuthorization(ns, ActionType::userAdmin)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() <<
+                                      "not authorized to remove user from database " <<
+                                      namespaceString.db,
+                              0);
+            }
+        }
+        else {
+            if (!checkAuthorization(ns, ActionType::remove)) {
+                return Status(ErrorCodes::Unauthorized,
+                              mongoutils::str::stream() << "not authorized to remove from " << ns,
+                              0);
+            }
+        }
+        return Status::OK();
+    }
+
+    Status AuthorizationManager::checkAuthForGetMore(const std::string& ns) {
+        return checkAuthForQuery(ns);
+    }
+
+    Status AuthorizationManager::checkAuthForPrivileges(const vector<Privilege>& privileges) {
+        for (std::vector<Privilege>::const_iterator it = privileges.begin();
+                it != privileges.end(); ++it) {
+            const Privilege& privilege = *it;
+            if (!checkAuthorization(privilege.getResource(), privilege.getActions())) {
+                return Status(ErrorCodes::Unauthorized, "unauthorized", 0);
+            }
+        }
+        return Status::OK();
     }
 
 } // namespace mongo

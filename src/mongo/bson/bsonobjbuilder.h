@@ -23,9 +23,11 @@
 #pragma once
 
 #include <boost/static_assert.hpp>
+#include <map>
 #include <cmath>
 #include <limits>
 
+#include "mongo/base/parse_number.h"
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonobj.h"
 #include "mongo/bson/bsonmisc.h"
@@ -337,12 +339,20 @@ namespace mongo {
             return *this;
         }
 
+        BSONObjBuilder& append(const StringData& fieldName, const BSONRegEx& regex) {
+            return appendRegex(fieldName, regex.pattern, regex.flags);
+        }
+
         BSONObjBuilder& appendCode(const StringData& fieldName, const StringData& code) {
             _b.appendNum((char) Code);
             _b.appendStr(fieldName);
             _b.appendNum((int) code.size()+1);
             _b.appendStr(code);
             return *this;
+        }
+
+        BSONObjBuilder& append(const StringData& fieldName, const BSONCode& code) {
+            return appendCode(fieldName, code.code);
         }
 
         /** Append a string element. 
@@ -364,7 +374,11 @@ namespace mongo {
         }
         /** Append a string element */
         BSONObjBuilder& append(const StringData& fieldName, const StringData& str) {
-            return append(fieldName, str.data(), (int) str.size()+1);
+            _b.appendNum((char) String);
+            _b.appendStr(fieldName);
+            _b.appendNum((int)str.size()+1);
+            _b.appendStr(str, true);
+            return *this;
         }
 
         BSONObjBuilder& appendSymbol(const StringData& fieldName, const StringData& symbol) {
@@ -373,6 +387,10 @@ namespace mongo {
             _b.appendNum((int) symbol.size()+1);
             _b.appendStr(symbol);
             return *this;
+        }
+
+        BSONObjBuilder& append(const StringData& fieldName, const BSONSymbol& symbol) {
+            return appendSymbol(fieldName, symbol.symbol);
         }
 
         /** Implements builder interface but no-op in ObjBuilder */
@@ -409,7 +427,13 @@ namespace mongo {
         }
 
         /**
-         * To store an OpTime in BSON, use this function. Pass the OpTime as a Date, as follows:
+         * To store an OpTime in BSON, use this function.
+         * This captures both the secs and inc fields.
+         */
+        BSONObjBuilder& append(const StringData& fieldName, OpTime optime);
+
+        /**
+         * Alternative way to store an OpTime in BSON. Pass the OpTime as a Date, as follows:
          *
          *     builder.appendTimestamp("field", optime.asDate());
          *
@@ -442,6 +466,10 @@ namespace mongo {
             return *this;
         }
 
+        BSONObjBuilder& append(const StringData& fieldName, const BSONDBRef& dbref) {
+            return appendDBRef(fieldName, dbref.ns, dbref.oid);
+        }
+
         /** Append a binary data element
             @param fieldName name of the field
             @param len length of the binary data in bytes
@@ -456,6 +484,10 @@ namespace mongo {
             _b.appendNum( (char) type );
             _b.appendBuf( data, len );
             return *this;
+        }
+
+        BSONObjBuilder& append(const StringData& fieldName, const BSONBinData& bd) {
+            return appendBinData(fieldName, bd.length, bd.type, bd.data);
         }
 
         /**
@@ -487,6 +519,10 @@ namespace mongo {
             return *this;
         }
 
+        BSONObjBuilder& append(const StringData& fieldName, const BSONCodeWScope& cws) {
+            return appendCodeWScope(fieldName, cws.code, cws.scope);
+        }
+
         void appendUndefined( const StringData& fieldName ) {
             _b.appendNum( (char) Undefined );
             _b.appendStr( fieldName );
@@ -513,6 +549,13 @@ namespace mongo {
         /** Append a set of values. */
         template < class T >
         BSONObjBuilder& append( const StringData& fieldName, const std::set< T >& vals );
+
+        /**
+         * Append a map of values as a sub-object.
+         * Note: the keys of the map should be StringData-compatible (i.e. strings).
+         */
+        template < class K, class T >
+        BSONObjBuilder& append( const StringData& fieldName, const std::map< K, T >& vals );
 
         /**
          * destructive
@@ -682,7 +725,8 @@ namespace mongo {
 
         template <typename T>
         BSONArrayBuilder& operator<<(const T& x) {
-            return append(x);
+            _b << num().c_str() << x;
+            return *this;
         }
 
         void appendNull() {
@@ -797,10 +841,11 @@ namespace mongo {
         BSONObjBuilder& append(const StringData& fieldName, unsigned long long val);
 
         void fill( const StringData& name ) {
-            char *r;
-            long int n = strtol( name.data(), &r, 10 );
-            if ( *r )
-                uasserted( 13048, (std::string)"can't append to array using string field name [" + name.data() + "]" );
+            long int n;
+            Status status = parseNumberFromStringWithBase( name, 10, &n );
+            uassert( 13048,
+                     (string)"can't append to array using string field name: " + name.toString(),
+                     status.isOK() );
             fill(n);
         }
 
@@ -847,6 +892,17 @@ namespace mongo {
     inline BSONObjBuilder& BSONObjBuilder::append( const StringData& fieldName, const std::set< T >& vals ) {
         return _appendIt< std::set< T > >( *this, fieldName, vals );
     }
+
+    template < class K, class T >
+    inline BSONObjBuilder& BSONObjBuilder::append( const StringData& fieldName, const std::map< K, T >& vals ) {
+        BSONObjBuilder bob;
+        for( typename std::map<K,T>::const_iterator i = vals.begin(); i != vals.end(); ++i ){
+            bob.append(i->first, i->second);
+        }
+        append(fieldName, bob.obj());
+        return *this;
+    }
+
 
     template < class L >
     inline BSONArrayBuilder& _appendArrayIt( BSONArrayBuilder& _this, const L& vals ) {

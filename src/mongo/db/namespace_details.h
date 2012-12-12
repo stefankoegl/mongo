@@ -512,7 +512,7 @@ namespace mongo {
          * - covered indexes
          * - in memory sorting
          */
-        static shared_ptr<Cursor> getCursor( const char* ns,
+        static shared_ptr<Cursor> getCursor( const StringData& ns,
                                              const BSONObj& query,
                                              const BSONObj& order = BSONObj(),
                                              const QueryPlanSelectionPolicy& planPolicy =
@@ -638,7 +638,7 @@ namespace mongo {
         void add_ns(const char *ns, DiskLoc& loc, bool capped, bool transactiontime );
         void add_ns( const char *ns, const NamespaceDetails &details );
 
-        NamespaceDetails* details(const char *ns) {
+        NamespaceDetails* details(const StringData& ns) {
             if ( !ht )
                 return 0;
             Namespace n(ns);
