@@ -49,7 +49,7 @@ namespace TransactionTimeTests {
         }
         void run() {
             const char *ns = "unittests.ttimetests.TTimeUpdates";
-            client().createCollection( ns, 1024, false, true );
+            client().createCollection( ns, 1024, false, 0, 0, true);
 
             unsigned long long result = count(ns);
             ASSERT_EQUALS( (unsigned long long int)0, result );
