@@ -146,7 +146,7 @@ namespace mongo {
             BSONElement fst = elems[0];
             BSONElement snd = elems[1];
 
-            massert(1234002, "array must contain at least one non-null element", fst.isNull() && snd.isNull());
+            massert(1234002, "array must contain at least one non-null element", !fst.isNull() || !snd.isNull());
 
             BSONObjBuilder bb;
 
@@ -155,8 +155,8 @@ namespace mongo {
 
             // all other conditions are inserted afterwards
             bb.appendElementsUnique(query);
-            query = query.removeField("transaction");
             query = bb.obj();
+            query = query.removeField("transaction");
             return query;
         }
 
