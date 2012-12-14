@@ -126,15 +126,18 @@ valid:
         "a" : 2
     }
 
+The document versions were valid during the following timespans.
 * before t1 no document version was valid
 * from t1 to t2 (that is [t1, t2) ) the first document version was valid
 * from t2 to t3 (that is [t2, t3) ) the second document version was valid
 * from t3 on no document version was valid
 
-    |----- t1 ------ t2 ------ t3 ----- ... (now)
-       |        |         |        |
-       |        |         |        \- no document
-       |        |         \- version 2
+Or in a more graphical way
+
+    |----- t1 ----- t2 ----- t3 ----- ... (now)
+       |        |        |        |
+       |        |        |        \- no document
+       |        |        \- version 2
        |        \- version 1
       \- no document
 
