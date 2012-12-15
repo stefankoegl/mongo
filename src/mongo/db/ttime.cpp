@@ -57,24 +57,51 @@ namespace mongo {
         return obj;
     }
 
-    BSONObj addCurrentVersionCriterion(BSONObj pattern) {
+    /*
+     * Adds query criterion for current document versions
+     *
+     * Prevents updates/deletes from affected historic versions
+     */
+    BSONObj addCurrentVersionCriterion(const BSONObj pattern) {
+
+        BSONElement endTimestamp = pattern.getField("transaction_end");
+        uassert(999145, "Updating/deleting non-current document versions is not allowed", endTimestamp.eoo() || endTimestamp.isNull() );
+
         BSONObjBuilder b;
         b.appendNull("transaction_end");
         b.appendElementsUnique(pattern);
         return b.obj();
     }
 
+    /*
+     * Sets the transaction_end field when a document version becomes historic
+     */
     BSONObj setTransactionEndTimestamp(BSONObj obj) {
-        obj = obj.replaceTimestamp("transaction_end");
+
         BSONElement endTimestamp = obj.getField("transaction_end");
+
+        uassert(999146, "Can not set transaction_end timestamp for non-existing member", !endTimestamp.eoo() );
+        uassert(999147, "Can not set transaction_end timestamp for historic document version", endTimestamp.isNull() );
+
+        obj = obj.replaceTimestamp("transaction_end");
+        endTimestamp = obj.getField("transaction_end");
         BSONElementManipulator(endTimestamp).initTimestamp();
         return obj;
     }
 
-    BSONObj setTransactionStartTimestamp(BSONObj newObj, BSONObj prevObj)
+    /*
+     * Sets the transaction_start timestamp of a new object to the
+     * transaction_end timestamp of the now-historic document version
+     */
+    BSONObj setTransactionStartTimestamp(const BSONObj newObj, const BSONObj prevObj)
     {
-        Date_t endTimestampTime = prevObj.getFieldDotted("transaction_end").timestampTime();
-        unsigned int endTimestampInc = prevObj.getFieldDotted("transaction_end").timestampInc();
+        BSONElement endTimestamp = prevObj.getFieldDotted("transaction_end");
+
+        uassert(999148, "Previous document version doesn't have transaction_end timestamp", !endTimestamp.eoo() );
+        uassert(999149, "Previous document version has invalid value for transaction_end timestamp", endTimestamp.type() == Timestamp );
+
+        Date_t endTimestampTime = endTimestamp.timestampTime();
+        unsigned int endTimestampInc = endTimestamp.timestampInc();
 
         BSONElement idValue = prevObj.getFieldDotted("_id._id");
         BSONObjBuilder bb;
@@ -83,7 +110,10 @@ namespace mongo {
         return wrapObjectId(bb.obj(), endTimestampTime, endTimestampInc);
     }
 
-    void addFromCondition(BSONObjBuilder &bb, BSONElement from)
+    /*
+     * Adds the from-part of a time-range query
+     */
+    void addFromCondition(BSONObjBuilder &bb, const BSONElement from)
     {
         if( !from.isNull() )
         {
@@ -105,7 +135,10 @@ namespace mongo {
         }
     }
 
-    void addToCondition(BSONObjBuilder &bb, BSONElement to)
+    /*
+     * Adds the to-part of a time-range query
+     */
+    void addToCondition(BSONObjBuilder &bb, BSONElement const to)
     {
         if( !to.isNull() )
         {
@@ -121,16 +154,15 @@ namespace mongo {
         /* no temporal criterion specified, return only current documents */
         if( !query.hasElement("transaction") )
         {
-            query = addCurrentVersionCriterion(query);
-            query = query.removeField("transaction");
-            return query;
+            return addCurrentVersionCriterion(query);
         }
 
         /* explicitly requested current documents only */
         BSONElement current = query.getFieldDotted("transaction.current");
         if( !current.eoo() )
         {
-            /* TODO: assert current.trueValue() */
+            uassert(999150, "\"current\" can only be used with true", current.isBoolean() && current.trueValue() );
+
             query = addCurrentVersionCriterion(query);
             query = query.removeField("transaction");
             return query;
@@ -164,9 +196,8 @@ namespace mongo {
         BSONElement allElem = query.getFieldDotted("transaction.all");
         if( !allElem.eoo() )
         {
-            /* TODO: assert allElem.trueValue() */
-            query = query.removeField("transaction");
-            return query;
+            uassert(999151, "\"all\" can only be used with true", allElem.isBoolean() && allElem.trueValue() );
+            return query.removeField("transaction");
         }
 
         /* return document versions that were current at a specific point in time */
@@ -187,27 +218,28 @@ namespace mongo {
         }
 
         /* no supported transaction-time query found */
-        /* TODO: assert false with proper error message */
-        query = query.removeField("transaction");
-        return query;
+        uassert(999152, "unknown value for \"transaction\"", false);
     }
 
-    BSONObj addTemporalOrder(BSONObj order)
+    /*
+     * Replace a "transaction" by "transaction_end" in the order object
+     */
+    BSONObj addTemporalOrder(const BSONObj order)
     {
         BSONElement transaction = order.getField("transaction");
 
-        if( !transaction.eoo() )
+        if( transaction.eoo() )
         {
-            /* replace transaction with transaction_id */
-            BSONObjBuilder bb;
-            bb.appendAs(transaction, "transaction_end");
-            bb.appendElementsUnique(order.removeField("transaction"));
-            return bb.obj();
+            return order;
         }
 
-        return order;
+        /* replace transaction with transaction_id */
+        return order.renameField("transaction", "transaction_end");
     }
 
+    /**
+     * Build a TTL query that works on Date and Timestamp objects
+     */
     BSONObj getTTLQuery(const char* fieldName, long long expireField)
     {
         BSONObjBuilder b;
@@ -231,10 +263,12 @@ namespace mongo {
     }
 
     /*
-     * Takes an index object, eg
-     * ...
+     * Takes an index object, eg {key: { ... }, name: "myindex", ...}
      * and modified the "key" member to include the transaction_end timestamp
      *
+     * * "transaction" is replaced by transaction_end
+     * * if no "transaction" is given, transaction_end is inserted in the beginning
+     * * to disable, pass "transaction: 0"
      */
     BSONObj modifyTransactionTimeIndex(BSONObj idx)
     {
@@ -268,19 +302,8 @@ namespace mongo {
         }
         else
         {
-            /* for any other number, we repalce "transaction" with "transaction_end" */
-            BSONObjBuilder b;
-            BSONObjIterator i(key);
-            while ( i.more() ) {
-                BSONElement e = i.next();
-                const char *fname = e.fieldName();
-                if( strcmp("transaction", fname) )
-                    b.append(e);
-                else
-                    b.appendNumber("transaction_end", transactionElem.number());
-            }
-
-            return idx.replaceField("key", b.obj());
+            key = key.renameField("transaction", "transaction_end");
+            return idx.replaceField("key", key);
         }
     }
 }

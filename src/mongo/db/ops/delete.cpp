@@ -143,17 +143,12 @@ namespace mongo {
             {
                 BSONObj onDisk = BSONObj::make(rloc.rec());
 
-                cout << onDisk.toString(false, false) << endl;
-
                 onDisk = setTransactionEndTimestamp(onDisk);
-                cout << onDisk.toString(false, false) << endl;
 
                 NamespaceDetailsTransient* nsdt = &NamespaceDetailsTransient::get(ns);
 
                 OpDebug debug;
                 theDataFileMgr.updateRecord(ns, d, nsdt, rloc.rec(), rloc, onDisk.objdata(), onDisk.objsize(), debug, false);
-                cout << onDisk.toString(false, false) << endl;
-
             }
             else
             {

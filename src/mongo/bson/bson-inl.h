@@ -1027,6 +1027,20 @@ dodouble:
         return b.obj();
     }
 
+    inline BSONObj BSONObj::renameField(const StringData& name, const StringData& newName) const {
+        BSONObjBuilder b;
+        BSONObjIterator i(*this);
+        while ( i.more() ) {
+            BSONElement e = i.next();
+            const char *fname = e.fieldName();
+            if( !strcmp(name.rawData(), fname) )
+                b.appendAs(e, newName);
+            else
+                b.append(e);
+        }
+        return b.obj();
+    }
+
     inline BSONObj BSONObj::replaceTimestamp(const StringData& name) const {
         BSONObjBuilder b;
         BSONObjIterator i(*this);
