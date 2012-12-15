@@ -209,6 +209,46 @@ the largest value.
 * $lte => $tlte
 
 
+Indexing
+--------
+
+When creating an index, MongoDB will include the transaction_end in the list of
+indexed fields to optimize for temporal queries.
+
+    > db.test.ensureIndex({ "field": 1 })
+    > db.test.getIndexes()
+    // skipped output
+    {
+        "v" : 1,
+        "key" : {
+            "transaction_end" : 1,
+            "field" : 1
+        },
+        "ns" : "test.test",
+        "name" : "field_1"
+    }
+
+By default the transaction_end timestamp will be included as the first field.
+To include the timestamp on a specific position, use "transaction":
+
+    > db.test.ensureIndex({ "field1": 1, "transaction": -1, "field2": -1 })
+
+If the transaction timestamp should not be included at all, use 0 instead.
+
+    > db.test.ensureIndex({ "field1": 1, "transaction": 0, "field2": -1 })
+
+
+Unique Constraints
+------------------
+
+When creating an index with unique constraint, the added transaction_end field
+will ensure that the constraint only applied to current documents. All values
+of the transaction_end field (except for null) are guaranteed to be unique.
+Therefor such a constraint will only cover current documents where
+transaction_end is null. As document versions become historic the uniqueness is
+no longer enforced but still valid, as they can not be changed anymore.
+
+
 Purging historic documents
 --------------------------
 
@@ -216,12 +256,13 @@ By default historic documents are retained indefinitely, which will increase
 disk usage as documents are updated. You can use TTL indexes to purge historic
 documents.
 
-    db.test.ensureIndex({transaction_end: 1}, {expireAfterSeconds: 3600})
+    > db.test.ensureIndex({}, {expireAfterSeconds: 3600})
 
 Creating this index will ensure that historic documents will be purged from the
 database that have been deleted at least one hour ago. This is independant of
 the transaction_start timestamp. Current documents (ie those that have no
 transaction_end timestamp set) will not be deleted.
+
 
 
 Stille to come
@@ -238,10 +279,3 @@ satisfied the criteria (within the given time(span)). However it should be possi
 
 * query for some criteria and time(span) AND
 * include some history, regardless of whether they satisfy the criteria or not
-
-
-### Constraints
-
-When specifying constraints you typically want them to apply only to current
-documents. This currently requires to explicitly specifying a compound index
-including the transaction_end. This should be the default behaviour.

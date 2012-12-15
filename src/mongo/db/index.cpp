@@ -30,6 +30,7 @@
 #include "mongo/db/namespace-inl.h"
 #include "mongo/db/ops/delete.h"
 #include "mongo/db/repl/rs.h"
+#include "mongo/db/ttime.h"
 #include "mongo/util/scopeguard.h"
 #include "mongo/util/mongoutils/str.h"
 
@@ -287,7 +288,7 @@ namespace mongo {
         return true;
     }
 
-    bool prepareToBuildIndex(const BSONObj& io,
+    bool prepareToBuildIndex(BSONObj& io,
                              bool mayInterrupt,
                              bool god,
                              string& sourceNS,
@@ -310,6 +311,24 @@ namespace mongo {
         const char *name = io.getStringField("name");
         uassert(12523, "no index name specified", *name);
 
+        sourceCollection = nsdetails(sourceNS.c_str());
+        if( sourceCollection == 0 ) {
+            // try to create it
+            string err;
+            if ( !userCreateNS(sourceNS.c_str(), BSONObj(), err, false) ) {
+                problem() << "ERROR: failed to create collection while adding its index. " << sourceNS << endl;
+                return false;
+            }
+            sourceCollection = nsdetails(sourceNS.c_str());
+            tlog() << "info: creating collection " << sourceNS << " on add index" << endl;
+            verify( sourceCollection );
+        }
+
+        if( sourceCollection->hasTransactionTime() )
+        {
+            io = modifyTransactionTimeIndex(io);
+        }
+
         BSONObj key = io.getObjectField("key");
         uassert(12524, "index key pattern too large", key.objsize() <= 2048);
         if( !validKeyPattern(key) ) {
@@ -322,19 +341,6 @@ namespace mongo {
                    sourceNS << "\n  idxobj:" << io.toString() << endl;
             string s = "bad add index attempt " + sourceNS + " key:" + key.toString();
             uasserted(12504, s);
-        }
-
-        sourceCollection = nsdetails(sourceNS.c_str());
-        if( sourceCollection == 0 ) {
-            // try to create it
-            string err;
-            if ( !userCreateNS(sourceNS.c_str(), BSONObj(), err, false) ) {
-                problem() << "ERROR: failed to create collection while adding its index. " << sourceNS << endl;
-                return false;
-            }
-            sourceCollection = nsdetails(sourceNS.c_str());
-            tlog() << "info: creating collection " << sourceNS << " on add index" << endl;
-            verify( sourceCollection );
         }
 
         if ( sourceCollection->findIndexByName(name) >= 0 ) {

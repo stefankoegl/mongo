@@ -27,6 +27,8 @@ namespace mongo {
     BSONObj addTemporalOrder(BSONObj order);
 
     BSONObj getTTLQuery(const char* fieldName, long long expireField);
+
+    BSONObj modifyTransactionTimeIndex(BSONObj key);
 }
 
 #endif /* TTIME_H_ */

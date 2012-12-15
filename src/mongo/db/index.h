@@ -277,7 +277,7 @@ namespace mongo {
      * @param sourceCollection - its details ptr
      * @return true if ok to continue.  when false we stop/fail silently (index already exists)
      */
-    bool prepareToBuildIndex(const BSONObj& io,
+    bool prepareToBuildIndex(BSONObj& io,
                              bool mayInterrupt,
                              bool god,
                              string& sourceNS,

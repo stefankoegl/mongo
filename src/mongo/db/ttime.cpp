@@ -229,5 +229,59 @@ namespace mongo {
 
         return b.obj();
     }
+
+    /*
+     * Takes an index object, eg
+     * ...
+     * and modified the "key" member to include the transaction_end timestamp
+     *
+     */
+    BSONObj modifyTransactionTimeIndex(BSONObj idx)
+    {
+        BSONObj key = idx.getObjectField("key");
+
+        // if a transition_end field has been included explicitly, don't do anything else
+        BSONElement transactionEndElem = key.getField("transaction_end");
+        if( !transactionEndElem.eoo() )
+        {
+            return idx;
+        }
+
+        /* if the key doesn't include a transaction field, we add
+         * the transaction_end as the first member */
+        BSONElement transactionElem = key.getField("transaction");
+        if( transactionElem.eoo() )
+        {
+            BSONObjBuilder b;
+            b.appendNumber("transaction_end", 1);
+            b.appendElements(key);
+            idx = idx.replaceField("key", b.obj());
+            return idx;
+        }
+
+        uassert(999423, "parameter of transaction must be a number", transactionElem.isNumber());
+
+        /* transaction: 0 means that we don't want to include a transaction-timestamp in the index */
+        if( transactionElem.number() == 0 )
+        {
+            return idx.replaceField("key", key.removeField("transaction"));
+        }
+        else
+        {
+            /* for any other number, we repalce "transaction" with "transaction_end" */
+            BSONObjBuilder b;
+            BSONObjIterator i(key);
+            while ( i.more() ) {
+                BSONElement e = i.next();
+                const char *fname = e.fieldName();
+                if( strcmp("transaction", fname) )
+                    b.append(e);
+                else
+                    b.appendNumber("transaction_end", transactionElem.number());
+            }
+
+            return idx.replaceField("key", b.obj());
+        }
+    }
 }
 
