@@ -419,7 +419,7 @@ namespace mongo {
             break;
         }
         case BSONObj::opNEAR:
-        case BSONObj::opINTERSECT:
+        case BSONObj::opGEO_INTERSECTS:
         case BSONObj::opMAX_DISTANCE:
             break;
         default:

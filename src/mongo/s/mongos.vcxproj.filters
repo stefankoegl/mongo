@@ -930,6 +930,12 @@
     <ClCompile Include="..\base\string_data.cpp">
       <Filter>base</Filter>
     </ClCompile>
+    <ClCompile Include="..\util\file.cpp">
+      <Filter>util\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\db\pipeline\document_source_geo_near.cpp">
+      <Filter>db\pipeline\Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\pch.h" />
@@ -1700,6 +1706,21 @@
     </ClInclude>
     <ClInclude Include="..\base\string_data-inl.h">
       <Filter>base</Filter>
+    </ClInclude>
+    <ClInclude Include="..\db\auth\principal_name.h">
+      <Filter>db\auth</Filter>
+    </ClInclude>
+    <ClInclude Include="..\scripting\bench.h">
+      <Filter>scripting</Filter>
+    </ClInclude>
+    <ClInclude Include="..\scripting\engine.h">
+      <Filter>scripting</Filter>
+    </ClInclude>
+    <ClInclude Include="..\scripting\engine_spidermonkey.h">
+      <Filter>scripting</Filter>
+    </ClInclude>
+    <ClInclude Include="..\scripting\engine_spidermonkey_internal.h">
+      <Filter>scripting</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

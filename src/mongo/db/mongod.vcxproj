@@ -1117,6 +1117,7 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClCompile Include="..\util\fail_point.cpp" />
     <ClCompile Include="..\util\fail_point_registry.cpp" />
     <ClCompile Include="..\util\fail_point_service.cpp" />
+    <ClCompile Include="..\util\file.cpp" />
     <ClCompile Include="..\util\file_allocator.cpp" />
     <ClCompile Include="..\util\histogram.cpp" />
     <ClCompile Include="..\util\intrusive_counter.cpp">
@@ -1236,6 +1237,7 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClCompile Include="commands\isself.cpp" />
     <ClCompile Include="commands\mr.cpp" />
     <ClCompile Include="commands\pipeline_command.cpp" />
+    <ClCompile Include="pipeline\document_source_geo_near.cpp" />
     <ClCompile Include="pipeline\pipeline.cpp" />
     <ClCompile Include="pipeline\pipeline_d.cpp" />
     <ClCompile Include="commands\touch.cpp" />
@@ -1461,6 +1463,7 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClInclude Include="auth\auth_external_state_server_common.h" />
     <ClInclude Include="auth\mongo_authentication_session.h" />
     <ClInclude Include="auth\principal.h" />
+    <ClInclude Include="auth\principal_name.h" />
     <ClInclude Include="auth\principal_set.h" />
     <ClInclude Include="auth\privilege.h" />
     <ClInclude Include="auth\privilege_set.h" />
@@ -1595,6 +1598,7 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClCompile Include="repl\rs_config.cpp" />
     <ClInclude Include="server_parameters.h" />
     <ClInclude Include="server_parameters_inline.h" />
+    <ClInclude Include="sort_phase_one.h" />
     <ClInclude Include="ttl.h" />
   </ItemGroup>
   <ItemGroup>
@@ -1665,13 +1669,11 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClInclude Include="d_concurrency.h" />
     <ClInclude Include="d_globals.h" />
     <ClInclude Include="geo\core.h" />
-    <ClInclude Include="globals.h" />
     <ClInclude Include="helpers\dblogger.h" />
     <ClInclude Include="instance.h" />
     <ClInclude Include="interrupt_status.h" />
     <ClInclude Include="interrupt_status_mongod.h" />
     <ClInclude Include="mongommf.h" />
-    <ClInclude Include="mongomutex.h" />
     <ClInclude Include="namespace-inl.h" />
     <ClInclude Include="namespacestring.h" />
     <ClInclude Include="oplogreader.h" />

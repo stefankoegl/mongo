@@ -434,7 +434,7 @@ namespace mongo {
             opNEAR = 0x13,
             opWITHIN = 0x14,
             opMAX_DISTANCE = 0x15,
-            opINTERSECT = 0x16,
+            opGEO_INTERSECTS = 0x16,
             opNEWNEAR = 0x17,
             TLT = 0x21,
             TLTE = 0x23,

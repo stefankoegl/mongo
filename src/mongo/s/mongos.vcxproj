@@ -1095,6 +1095,7 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClCompile Include="..\db\hasher.cpp" />
     <ClCompile Include="..\db\initialize_server_global_state.cpp" />
     <ClCompile Include="..\db\keypattern.cpp" />
+    <ClCompile Include="..\db\pipeline\document_source_geo_near.cpp" />
     <ClCompile Include="..\db\pipeline\pipeline.cpp" />
     <ClCompile Include="..\db\common.cpp" />
     <ClCompile Include="..\db\dbmessage.cpp" />
@@ -1149,6 +1150,7 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClCompile Include="..\util\fail_point.cpp" />
     <ClCompile Include="..\util\fail_point_registry.cpp" />
     <ClCompile Include="..\util\fail_point_service.cpp" />
+    <ClCompile Include="..\util\file.cpp" />
     <ClCompile Include="..\util\intrusive_counter.cpp">
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4355;4800;4267;4244;4291</DisableSpecificWarnings>
       <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4355;4800;4267;4244;4291</DisableSpecificWarnings>
@@ -1377,6 +1379,7 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClInclude Include="..\db\auth\auth_external_state_server_common.h" />
     <ClInclude Include="..\db\auth\mongo_authentication_session.h" />
     <ClInclude Include="..\db\auth\principal.h" />
+    <ClInclude Include="..\db\auth\principal_name.h" />
     <ClInclude Include="..\db\auth\principal_set.h" />
     <ClInclude Include="..\db\auth\privilege.h" />
     <ClInclude Include="..\db\auth\privilege_set.h" />
@@ -1424,7 +1427,11 @@ cscript //Nologo "$(ProjectDir)..\shell\createCPPfromJavaScriptFiles.js" "$(Proj
     <ClInclude Include="..\platform\unordered_map.h" />
     <ClInclude Include="..\platform\unordered_set.h" />
     <ClInclude Include="..\platform\windows_basic.h" />
+    <ClInclude Include="..\scripting\bench.h" />
     <ClInclude Include="..\scripting\bson_template_evaluator.h" />
+    <ClInclude Include="..\scripting\engine.h" />
+    <ClInclude Include="..\scripting\engine_spidermonkey.h" />
+    <ClInclude Include="..\scripting\engine_spidermonkey_internal.h" />
     <ClInclude Include="..\util\admin_access.h" />
     <ClInclude Include="..\util\alignedbuilder.h" />
     <ClInclude Include="..\util\allocator.h" />
