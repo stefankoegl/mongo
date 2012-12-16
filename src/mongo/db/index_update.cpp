@@ -583,7 +583,15 @@ namespace mongo {
         BSONObjBuilder b;
         b.append("name", "_id_");
         b.append("ns", ns);
-        b.append("key", id_obj);
+        if( d->hasTransactionTime() )
+        {
+            /* explicitly exclude the transaction_end timestamp, to leave the _id index untouched */
+            b.append("key", fromjson("{\"_id\":1, \"transaction\": 0}"));
+        }
+        else
+        {
+            b.append("key", id_obj);
+        }
         BSONObj o = b.done();
 
         /* edge case: note the insert could fail if we have hit maxindexes already */

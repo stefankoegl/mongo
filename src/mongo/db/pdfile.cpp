@@ -336,12 +336,13 @@ namespace mongo {
         if ( mx > 0 )
             d->setMaxCappedDocs( mx );
 
-        /* automatically create temporal index */
+        /* ensure unique (current) _id._id */
         if ( d->hasTransactionTime() )
         {
-            BSONObj indexInfo = BSON( "key" << BSON( "_id.transaction_start" << 1 << "transaction_end" << -1) <<
+            BSONObj indexInfo = BSON( "key" << BSON( "_id._id" << 1 << "transaction_end" << 1) <<
                                       "ns" << ns <<
-                                      "name" << "temporal_idx" );
+                                      "name" << "current_id" <<
+                                      "unique" << true);
 
             string index = nsToDatabase(ns).append(".system.indexes");
             theDataFileMgr.insertWithObjMod(index.c_str(), indexInfo, false);
