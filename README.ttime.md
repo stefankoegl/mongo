@@ -265,10 +265,10 @@ transaction_end timestamp set) will not be deleted.
 
 
 
-Stille to come
+Still to come
 --------------
 
-The following functionality is not yet planned, but is planned to work as
+The following functionality is not yet implemented, but is planned to work as
 described below.
 
 ### Included history
