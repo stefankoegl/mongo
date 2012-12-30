@@ -29,10 +29,11 @@
 #include "mongo/db/namespacestring.h"
 #include "mongo/s/client_info.h"
 #include "mongo/s/chunk.h"
+#include "mongo/s/chunk_version.h"
 #include "mongo/s/cursors.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/request.h"
-#include "mongo/s/stats.h"
+#include "mongo/s/version_manager.h"
 #include "mongo/util/mongoutils/str.h"
 
 // error codes 8010-8040
@@ -147,15 +148,8 @@ namespace mongo {
                                 const string& versionedNS, const BSONObj& filter,
                                 map<Shard,BSONObj>& results )
         {
-            const BSONObj& commandWithAuth = ClientBasic::getCurrent()->getAuthenticationInfo()->
-                    getAuthTable().copyCommandObjAddingAuth( command );
 
-            QuerySpec qSpec( db + ".$cmd",
-                             noauth ? command : commandWithAuth,
-                             BSONObj(),
-                             0,
-                             1,
-                             options );
+            QuerySpec qSpec(db + ".$cmd", command, BSONObj(), 0, 1, options);
 
             ParallelSortClusteredCursor cursor( qSpec, CommandInfo( versionedNS, filter ) );
 
@@ -590,8 +584,8 @@ namespace mongo {
                                 << group.shard
                                 << " at version "
                                 << (group.manager.get() ?
-                                        group.manager->getVersion().toString() :
-                                        ShardChunkVersion(0, OID()).toString())
+                                    group.manager->getVersion().toString() :
+                                    ChunkVersion(0, OID()).toString())
                                 << endl;
 
                         //
@@ -688,8 +682,8 @@ namespace mongo {
                                     << group.shard->toString()
                                     << " at version "
                                     << (group.manager.get() ?
-                                            group.manager->getVersion().toString() :
-                                            ShardChunkVersion(0, OID()).toString())
+                                        group.manager->getVersion().toString() :
+                                        ChunkVersion(0, OID()).toString())
                                     << causedBy(insertErr);
 
                             // If we're continuing-on-error and the insert error is superseded by
@@ -915,7 +909,7 @@ namespace mongo {
                     if( ! skPattern.partOfShardKey( field.fieldName() ) || getGtLtOp( field ) != BSONObj::Equality )
                         continue;
 
-                    if( field != shardKey[ field.fieldName() ] ){
+                    if( field != toUpdate[ field.fieldName() ] ){
 
                         // Retry reloading the config data once
                         if( ! reloadConfigData ){

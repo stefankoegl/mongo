@@ -19,43 +19,34 @@
 #include "pch.h"
 
 #include "mongo/base/init.h"
+#include "mongo/client/connpool.h"
+#include "mongo/client/parallel.h"
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/auth/privilege.h"
 #include "mongo/db/commands/find_and_modify.h"
 #include "mongo/db/commands/mr.h"
-#include "../util/net/message.h"
-#include "../db/dbmessage.h"
-#include "../client/connpool.h"
-#include "../client/parallel.h"
-#include "../db/commands.h"
-#include "../db/pipeline/pipeline.h"
-#include "../db/pipeline/document_source.h"
-#include "../db/pipeline/expression_context.h"
-#include "../db/queryutil.h"
-#include "s/interrupt_status_mongos.h"
-#include "../scripting/engine.h"
-#include "../util/timer.h"
+#include "mongo/db/commands/rename_collection.h"
+#include "mongo/db/commands.h"
+#include "mongo/db/dbmessage.h"
 #include "mongo/db/lasterror.h"
-
-
-#include "config.h"
-#include "chunk.h"
-#include "strategy.h"
-#include "grid.h"
-#include "client_info.h"
+#include "mongo/db/pipeline/pipeline.h"
+#include "mongo/db/pipeline/document_source.h"
+#include "mongo/db/pipeline/expression_context.h"
+#include "mongo/db/queryutil.h"
+#include "mongo/s/client_info.h"
+#include "mongo/s/chunk.h"
+#include "mongo/s/config.h"
+#include "mongo/s/grid.h"
+#include "mongo/s/interrupt_status_mongos.h"
+#include "mongo/s/strategy.h"
+#include "mongo/s/version_manager.h"
+#include "mongo/scripting/engine.h"
+#include "mongo/util/net/message.h"
+#include "mongo/util/timer.h"
 
 namespace mongo {
-
-    bool setParmsMongodSpecific(const string& dbname, BSONObj& cmdObj, string& errmsg, BSONObjBuilder& result, bool fromRepl )
-    { 
-        return true;
-    }
-
-    const char* fetchReplIndexPrefetchParam() { 
-        return "unsupported"; 
-    }
 
     namespace dbgrid_pub_cmds {
 
@@ -463,14 +454,6 @@ namespace mongo {
                     return true;
                 }
 
-                // Make sure you have write auth to the database, otherwise you'll delete the
-                // database info from the config server before the command even reaches the shards.
-                if ( !ClientBasic::getCurrent()->getAuthenticationInfo()->isAuthorized( dbName ) ) {
-                    result.append( "errmsg",
-                                   str::stream() << "Not authorized to drop db: " << dbName );
-                    return false;
-                }
-
                 //
                 // Reload the database configuration so that we're sure a database entry exists
                 // TODO: This won't work with parallel dropping
@@ -512,9 +495,7 @@ namespace mongo {
             virtual void addRequiredPrivileges(const std::string& dbname,
                                                const BSONObj& cmdObj,
                                                std::vector<Privilege>* out) {
-                ActionSet actions;
-                actions.addAction(ActionType::renameCollection);
-                out->push_back(Privilege(dbname, actions));
+                rename_collection::addPrivilegesRequiredForRenameCollection(cmdObj, out);
             }
             bool run(const string& dbName, BSONObj& cmdObj, int, string& errmsg, BSONObjBuilder& result, bool) {
                 string fullnsFrom = cmdObj.firstElement().valuestrsafe();
@@ -898,7 +879,12 @@ namespace mongo {
                 BSONObj max = cmdObj.getObjectField( "max" );
                 BSONObj keyPattern = cmdObj.getObjectField( "keyPattern" );
 
-                uassert(13408,  "keyPattern must equal shard key", cm->getShardKey().key() == keyPattern);
+                uassert( 13408, "keyPattern must equal shard key",
+                         cm->getShardKey().key() == keyPattern );
+                uassert( 13405, str::stream() << "min value " << min << " does not have shard key",
+                         cm->hasShardKey(min) );
+                uassert( 13406, str::stream() << "max value " << max << " does not have shard key",
+                         cm->hasShardKey(max) );
 
                 // yes these are doubles...
                 double size = 0;
@@ -1209,9 +1195,11 @@ namespace mongo {
                 set<Shard> shards;
                 cm->getShardsForQuery(shards, query);
 
+                // We support both "num" and "limit" options to control limit
                 int limit = 100;
-                if (cmdObj["num"].isNumber())
-                    limit = cmdObj["num"].numberInt();
+                const char* limitName = cmdObj["num"].isNumber() ? "num" : "limit";
+                if (cmdObj[limitName].isNumber())
+                    limit = cmdObj[limitName].numberInt();
 
                 list< shared_ptr<Future::CommandResult> > futures;
                 BSONArrayBuilder shardArray;
@@ -1744,6 +1732,13 @@ namespace mongo {
         class EvalCmd : public PublicGridCommand {
         public:
             EvalCmd() : PublicGridCommand( "$eval" ) {}
+            virtual void addRequiredPrivileges(const std::string& dbname,
+                                               const BSONObj& cmdObj,
+                                               std::vector<Privilege>* out) {
+                // $eval can do pretty much anything, so require all privileges.
+                out->push_back(Privilege(PrivilegeSet::WILDCARD_RESOURCE,
+                                         AuthorizationManager::getAllUserActions()));
+            }
             virtual bool run(const string& dbName,
                              BSONObj& cmdObj,
                              int,
@@ -1860,90 +1855,26 @@ namespace mongo {
 
     } // namespace pub_grid_cmds
 
-    bool Command::runAgainstRegistered(const char *ns, BSONObj& jsobj, BSONObjBuilder& anObjBuilder, int queryOptions) {
-        const char *p = strchr(ns, '.');
-        if ( !p ) return false;
-        if ( strcmp(p, ".$cmd") != 0 ) return false;
-
-        bool ok = true;
+    void Command::runAgainstRegistered(const char *ns, BSONObj& jsobj, BSONObjBuilder& anObjBuilder,
+                                       int queryOptions) {
+        // It should be impossible for this uassert to fail since there should be no way to get into
+        // this function with any other collection name.
+        uassert(16618,
+                "Illegal attempt to run a command against a namespace other than $cmd.",
+                NamespaceString(ns).coll == "$cmd");
 
         BSONElement e = jsobj.firstElement();
-        map<string,Command*>::iterator i;
-
-        if ( e.eoo() )
-            ;
-        // check for properly registered command objects.
-        else if ( (i = _commands->find(e.fieldName())) != _commands->end() ) {
-            string errmsg;
-            Command *c = i->second;
-            ClientInfo *client = ClientInfo::get();
-            AuthenticationInfo *ai = client->getAuthenticationInfo();
-
-            char cl[256];
-            nsToDatabase(ns, cl);
-            if (!noauth) {
-                std::vector<Privilege> privileges;
-                c->addRequiredPrivileges(cl, jsobj, &privileges);
-                AuthorizationManager* authManager = client->getAuthorizationManager();
-                if (c->requiresAuth() && (!authManager->checkAuthForPrivileges(privileges).isOK()
-                                || !ai->isAuthorizedForLock(cl, c->locktype()))) {
-                    ok = false;
-                    errmsg = "unauthorized";
-                    anObjBuilder.append("note", str::stream() << "not authorized for command: " <<
-                                        e.fieldName() << " on database " << cl);
-                }
-            }
-            if (ok && c->adminOnly() && c->localHostOnlyIfNoAuth(jsobj) && noauth &&
-                    !ai->isLocalHost()) {
-                ok = false;
-                errmsg = "unauthorized: this command must run from localhost when running db without auth";
-                log() << "command denied: " << jsobj.toString() << endl;
-            }
-            if (ok && c->adminOnly() && !startsWith(ns, "admin.")) {
-                ok = false;
-                errmsg = "access denied - use admin db";
-            }
-            if (ok && jsobj.getBoolField("help")) {
-                stringstream help;
-                help << "help for: " << e.fieldName() << " ";
-                c->help( help );
-                anObjBuilder.append( "help" , help.str() );
-            }
-            if (ok) {
-                try {
-                    ok = c->run( nsToDatabase( ns ) , jsobj, queryOptions, errmsg, anObjBuilder, false );
-                }
-                catch (DBException& e) {
-                    ok = false;
-                    int code = e.getCode();
-                    if (code == RecvStaleConfigCode) { // code for StaleConfigException
-                        throw;
-                    }
-
-                    {
-                        stringstream ss;
-                        ss << "exception: " << e.what();
-                        anObjBuilder.append( "errmsg" , ss.str() );
-                        anObjBuilder.append( "code" , code );
-                    }
-                }
-            }
-
-            BSONObj tmp = anObjBuilder.asTempObj();
-            bool have_ok = tmp.hasField("ok");
-            bool have_errmsg = tmp.hasField("errmsg");
-
-            if (!have_ok)
-                anObjBuilder.append( "ok" , ok ? 1.0 : 0.0 );
-
-            if ( !ok && !have_errmsg) {
-                anObjBuilder.append("errmsg", errmsg);
-                setLastError(0, errmsg.c_str());
-            }
-            return true;
+        std::string commandName = e.fieldName();
+        Command* c = e.type() ? Command::findCommand(commandName) : NULL;
+        if (!c) {
+            Command::appendCommandStatus(anObjBuilder,
+                                         false,
+                                         str::stream() << "no such cmd: " << commandName);
+            return;
         }
+        ClientInfo *client = ClientInfo::get();
 
-        return false;
+        execCommandClientBasic(c, *client, queryOptions, ns, jsobj, anObjBuilder, false);
     }
 
 } // namespace mongo

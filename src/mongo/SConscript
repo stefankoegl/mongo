@@ -16,6 +16,7 @@ Import("darwin windows solaris linux nix")
 
 env.SConscript(['base/SConscript',
                 'db/auth/SConscript',
+                'db/fts/SConscript',
                 'db/ops/SConscript',
                 'platform/SConscript',
                 's/SConscript',
@@ -66,10 +67,12 @@ env.StaticLibrary('bson', [
         'bson/mutable/mutable_bson_internal.cpp',
         'bson/util/bson_extract.cpp',
         'util/safe_num.cpp',
+        'bson/bson_validate.cpp',
         'bson/oid.cpp',
         'db/jsobj.cpp',
         'db/json.cpp'
         ], LIBDEPS=[
+        'base/base',
         'md5',
         'stringutils',
         '$BUILD_DIR/mongo/platform/platform',
@@ -144,7 +147,6 @@ commonFiles = [ "pch.cpp",
                 "util/net/listen.cpp",
                 "util/startup_test.cpp",
                 "util/version.cpp",
-                "client/authentication_table_common.cpp",
                 "client/connpool.cpp",
                 "client/dbclient.cpp",
                 "client/dbclient_rs.cpp",
@@ -210,14 +212,16 @@ env.StaticLibrary('mongocommon', commonFiles,
                   SYSLIBDEPS=commonSysLibdeps)
 
 env.StaticLibrary("coredb", [
-        "client/authentication_table_server.cpp",
         "client/parallel.cpp",
         "db/commands.cpp",
+        "db/commands/authentication_commands.cpp",
+        "db/commands/connection_status.cpp",
         "db/commands/fail_point_cmd.cpp",
         "db/commands/find_and_modify_common.cpp",
         "db/commands/hashcmd.cpp",
         "db/commands/isself.cpp",
         "db/commands/mr_common.cpp",
+        "db/commands/rename_collection_common.cpp",
         "db/commands/server_status.cpp",
         "db/commands/parameters.cpp",
         "db/pipeline/pipeline.cpp",
@@ -258,16 +262,15 @@ env.StaticLibrary("coredb", [
         "db/projection.cpp",
         "db/querypattern.cpp",
         "db/queryutil.cpp",
-        "db/security_commands.cpp",
-        "db/security_common.cpp",
         "db/stats/top.cpp",
         "s/shardconnection.cpp",
         ],
                   LIBDEPS=['db/auth/serverauth',
                            'server_parameters',
-                           'geometry'])
+                           'geoparser'])
 
-coreServerFiles = [ "db/common.cpp",
+coreServerFiles = [ "db/client_basic.cpp",
+                    "db/common.cpp",
                     "util/net/miniwebserver.cpp",
                     "db/indexkey.cpp",
                     "db/stats/counters.cpp",
@@ -386,11 +389,11 @@ serverOnlyFiles = [ "db/curop.cpp",
                     "db/pdfile.cpp",
                     "db/record.cpp",
                     "db/cursor.cpp",
-                    "db/security.cpp",
                     "db/queryoptimizer.cpp",
                     "db/queryoptimizercursorimpl.cpp",
                     "db/extsort.cpp",
                     "db/index.cpp",
+                    "db/index_builder.cpp",
                     "db/index_update.cpp",
                     "db/index_rebuilder.cpp",
                     "db/scanandorder.cpp",
@@ -409,6 +412,7 @@ serverOnlyFiles = [ "db/curop.cpp",
                     "db/ops/update.cpp",
                     "db/ops/update_internal.cpp",
                     "db/dbcommands.cpp",
+                    "db/compact.cpp",
                     "db/dbcommands_admin.cpp",
 
                     # most commands are only for mongod
@@ -427,6 +431,8 @@ serverOnlyFiles = [ "db/curop.cpp",
 env.Library( "dbcmdline", "db/cmdline.cpp", LIBDEPS=['bson', 'server_parameters'] )
 env.CppUnitTest('cmdline_test', 'db/cmdline_test.cpp', LIBDEPS=['dbcmdline'])
 
+env.CppUnitTest('diskloc_test', 'db/diskloc_test.cpp', LIBDEPS=[])
+
 env.Library('stacktrace', 'util/stacktrace.cpp')
 
 env.Program('lame_stacktrace_test', 'util/lame_stacktrace_test.cpp',
@@ -437,15 +443,14 @@ serverOnlyFiles += mmapFiles
 
 serverOnlyFiles += [ "db/stats/snapshots.cpp" ]
 
-env.Library( "coreshard", [ "client/distlock.cpp",
-                            "s/balancer_lock.cpp",
-                            "s/config.cpp",
-                            "s/grid.cpp",
-                            "s/chunk.cpp",
-                            "s/shard.cpp",
-                            "s/shardkey.cpp"],
-                            LIBDEPS=['s/base'] )
-
+env.Library('coreshard', ['client/distlock.cpp',
+                          's/config.cpp',
+                          's/grid.cpp',
+                          's/chunk.cpp',
+                          's/shard.cpp',
+                          's/shardkey.cpp'],
+            LIBDEPS=['s/base']);
+    
 mongosLibraryFiles = [
     "s/interrupt_status_mongos.cpp",
     "s/strategy.cpp",
@@ -456,17 +461,18 @@ mongosLibraryFiles = [
     "s/request.cpp",
     "s/client_info.cpp",
     "s/cursors.cpp",
-    "s/config_migrate.cpp",
     "s/s_only.cpp",
-    "s/stats.cpp",
     "s/balance.cpp",
     "s/balancer_policy.cpp",
     "s/writeback_listener.cpp",
-    "s/shard_version.cpp",
-    "s/security.cpp",
+    "s/version_manager.cpp",
     ]
 
-env.Library( "mongoscore" , mongosLibraryFiles, LIBDEPS=['db/auth/authmongos'] )
+env.Library( "mongoscore",
+             mongosLibraryFiles,
+             LIBDEPS=['db/auth/authmongos',
+                      'db/fts/ftsmongos'
+                      ] )
 
 env.CppUnitTest( "balancer_policy_test" , [ "s/balancer_policy_tests.cpp" ] ,
                  LIBDEPS=["mongoscore", "coreshard", "mongocommon","coreserver","coredb","dbcmdline","mongodandmongos"] ,
@@ -523,26 +529,29 @@ serverOnlyFiles += [ "s/d_logic.cpp",
 env.StaticLibrary("defaultversion", "s/default_version.cpp")
 
 env.StaticLibrary("geometry", [ "db/geo/hash.cpp", "db/geo/shapes.cpp", ], LIBDEPS = [ "bson" ])
-env.StaticLibrary("geojson", [ "db/geo/geojsonparser.cpp", ],
+env.StaticLibrary("geoparser", [ "db/geo/geoparser.cpp", ],
                   LIBDEPS = [ "bson",
+                              "geometry",
                               '$BUILD_DIR/third_party/s2/s2' ])
 
 env.CppUnitTest("hash_test", [ "db/geo/hash_test.cpp" ], LIBDEPS = ["geometry" ])
-env.CppUnitTest("geojsonparser_test", [ "db/geo/geojsonparser_test.cpp" ], LIBDEPS = ["geojson"])
+env.CppUnitTest("geoparser_test", [ "db/geo/geoparser_test.cpp" ], LIBDEPS = ["geoparser"])
 
 env.StaticLibrary("serveronly", serverOnlyFiles,
                   LIBDEPS=["coreshard",
                            "db/auth/authmongod",
+                           "db/fts/ftsmongod",
+                           "db/ops/update",
                            "dbcmdline",
                            "defaultversion",
-                           "geojson",
-                           "geometry",
+                           "geoparser",
                            '$BUILD_DIR/third_party/shim_snappy'])
 
 # These files go into mongos and mongod only, not into the shell or any tools.
 mongodAndMongosFiles = [
     "db/connection_factory.cpp",
     "db/initialize_server_global_state.cpp",
+    "db/server_extra_log_context.cpp",
     "util/net/message_server_port.cpp",
     ]
 env.StaticLibrary("mongodandmongos", mongodAndMongosFiles)
@@ -553,7 +562,7 @@ everythingButMongodAndMongosFiles = [
     ]
 env.StaticLibrary("notmongodormongos", everythingButMongodAndMongosFiles)
 
-mongodOnlyFiles = [ "db/db.cpp", "db/compact.cpp", "db/commands/touch.cpp" ]
+mongodOnlyFiles = [ "db/db.cpp", "db/commands/touch.cpp" ]
 
 # ----- TARGETS ------
 
@@ -603,11 +612,10 @@ env.Install( '#/', [
 mongos = env.Program(
     "mongos", [ "s/server.cpp"] ,
     LIBDEPS=["mongoscore", "coreserver", "coredb", "mongocommon", "coreshard", "dbcmdline", "ntservice",
-             "mongodandmongos"] + env['MODULE_LIBDEPS_MONGOS'])
+             "mongodandmongos", "s/upgrade"] + env['MODULE_LIBDEPS_MONGOS'])
 env.Install( '#/', mongos )
 
-env.Library("clientandshell", ["client/authentication_table_client.cpp",
-                               "client/clientAndShell.cpp"],
+env.Library("clientandshell", ["client/clientAndShell.cpp"],
                               LIBDEPS=["mongocommon",
                                        "defaultversion",
                                        "gridfs",
@@ -641,6 +649,7 @@ test = testEnv.Install(
                        "testframework",
                        "gridfs",
                        "notmongodormongos",
+                       "s/upgrade",
                        "mocklib"]))
 
 if len(testEnv.subst('$PROGSUFFIX')):

@@ -135,8 +135,6 @@ namespace mongo {
         cout << try_catch << endl;
     }
 
-    Handle< Context > baseContext_;
-
     class JSThreadConfig {
     public:
         JSThreadConfig( V8Scope* scope, const Arguments &args, bool newScope = false ) : started_(), done_(), newScope_( newScope ) {
@@ -156,10 +154,6 @@ namespace mongo {
 
         void start() {
             jsassert( !started_, "Thread already started" );
-            // obtain own scope for execution
-            // do it here, not in constructor, otherwise it creates an infinite recursion from ScopedThread
-            _scope.reset( dynamic_cast< V8Scope * >( globalScriptEngine->newScope() ) );
-
             JSThread jt( *this );
             thread_.reset( new boost::thread( jt ) );
             started_ = true;
@@ -182,26 +176,27 @@ namespace mongo {
             JSThread( JSThreadConfig &config ) : config_( config ) {}
 
             void operator()() {
-                V8Scope* scope = config_._scope.get();
-                v8::Isolate::Scope iscope(scope->getIsolate());
-                v8::Locker l(scope->getIsolate());
+                config_._scope.reset( dynamic_cast< V8Scope * >( globalScriptEngine->newScope() ) );
+                v8::Locker v8lock(config_._scope->getIsolate());
+                v8::Isolate::Scope iscope(config_._scope->getIsolate());
                 HandleScope handle_scope;
-                Context::Scope context_scope( scope->getContext() );
+                Context::Scope context_scope(config_._scope->getContext());
 
                 BSONObj args = config_.args_;
-                Local< v8::Function > f = v8::Function::Cast( *(scope->mongoToV8Element(args.firstElement(), true)) );
+                Local< v8::Function > f = v8::Function::Cast( *(config_._scope->mongoToV8Element(args.firstElement(), true)) );
                 int argc = args.nFields() - 1;
 
-                boost::scoped_array< Local< Value > > argv( new Local< Value >[ argc ] );
+                // TODO SERVER-8016: properly allocate handles on the stack
+                Local<Value> argv[24];
                 BSONObjIterator it(args);
                 it.next();
-                for( int i = 0; i < argc; ++i ) {
-                    argv[ i ] = Local< Value >::New( scope->mongoToV8Element(*it, true) );
+                for(int i = 0; i < argc && i < 24; ++i) {
+                    argv[i] = Local< Value >::New(config_._scope->mongoToV8Element(*it, true));
                     it.next();
                 }
                 TryCatch try_catch;
-                Handle< Value > ret = f->Call( scope->getContext()->Global(), argc, argv.get() );
-                if ( ret.IsEmpty() ) {
+                Handle<Value> ret = f->Call(config_._scope->getContext()->Global(), argc, argv);
+                if (ret.IsEmpty() || try_catch.HasCaught()) {
                     string e = toSTLString( &try_catch );
                     log() << "js thread raised exception: " << e << endl;
                     // v8 probably does something sane if ret is empty, but not going to assume that for now
@@ -209,7 +204,7 @@ namespace mongo {
                 }
                 // ret is translated to BSON to switch isolate
                 BSONObjBuilder b;
-                scope->v8ToMongoElement(b, "ret", ret);
+                config_._scope->v8ToMongoElement(b, "ret", ret);
                 config_.returnData_ = b.obj();
             }
 
@@ -266,6 +261,7 @@ namespace mongo {
     }
 
     Handle< Value > ThreadInject( V8Scope* scope, const Arguments &args ) {
+        v8::HandleScope handle_scope;
         jsassert( args.Length() == 1 , "threadInject takes exactly 1 argument" );
         jsassert( args[0]->IsObject() , "threadInject needs to be passed a prototype" );
 
@@ -276,10 +272,11 @@ namespace mongo {
         scope->injectV8Function("start", ThreadStart, o);
         scope->injectV8Function("join", ThreadJoin, o);
         scope->injectV8Function("returnData", ThreadReturnData, o);
-        return v8::Undefined();
+        return handle_scope.Close(v8::Handle<Value>());
     }
 
     Handle< Value > ScopedThreadInject( V8Scope* scope, const Arguments &args ) {
+        v8::HandleScope handle_scope;
         jsassert( args.Length() == 1 , "threadInject takes exactly 1 argument" );
         jsassert( args[0]->IsObject() , "threadInject needs to be passed a prototype" );
 
@@ -288,12 +285,10 @@ namespace mongo {
         scope->injectV8Function("init", ScopedThreadInit, o);
         // inheritance takes care of other member functions
 
-        return v8::Undefined();
+        return handle_scope.Close(v8::Handle<Value>());
     }
 
     void installFork( V8Scope* scope, v8::Handle< v8::Object > &global, v8::Handle< v8::Context > &context ) {
-        if ( baseContext_.IsEmpty() ) // if this is the shell, first call will be with shell context, otherwise don't expect to use fork() anyway
-            baseContext_ = context;
         scope->injectV8Function("_threadInject", ThreadInject, global);
         scope->injectV8Function("_scopedThreadInject", ScopedThreadInject, global);
     }

@@ -45,7 +45,6 @@
 #include "pdfile.h"
 #include "db.h"
 #include "commands.h"
-#include "security.h"
 #include "cmdline.h"
 #include "repl_block.h"
 #include "repl/rs.h"
@@ -192,7 +191,7 @@ namespace mongo {
             int n = 0;
             list<BSONObj> src;
             {
-                Client::ReadContext ctx( "local.sources", dbpath, false );
+                Client::ReadContext ctx("local.sources", dbpath);
                 shared_ptr<Cursor> c = findTableScan("local.sources", BSONObj());
                 while ( c->ok() ) {
                     src.push_back(c->current());
@@ -245,9 +244,8 @@ namespace mongo {
     public:
         ReplicationInfoServerStatus() : ServerStatusSection( "repl" ){}
         bool includeByDefault() const { return true; }
-        bool adminOnly() const { return false; }
         
-        BSONObj generateSection( const BSONElement& configElement, bool userIsAdmin ) const {
+        BSONObj generateSection(const BSONElement& configElement) const {
             if ( ! anyReplEnabled() )
                 return BSONObj();
             
@@ -282,6 +280,7 @@ namespace mongo {
             appendReplicationInfo(result, 0);
 
             result.appendNumber("maxBsonObjectSize", BSONObjMaxUserSize);
+            result.appendNumber("maxMessageSizeBytes", MaxMessageSizeBytes);
             result.appendDate("localTime", jsTime());
             return true;
         }
@@ -825,8 +824,8 @@ namespace mongo {
 
         int get() const { return _value; }
 
-        virtual void append( BSONObjBuilder& b ) {
-            b.append( name(), _value );
+        virtual void append( BSONObjBuilder& b, const string& name ) {
+            b.append( name, _value );
         }
 
         virtual Status set( const BSONElement& newValuElement ) {
@@ -1127,7 +1126,7 @@ namespace mongo {
         if( noauth ) {
             return true;
         }
-        if (!cc().isAdmin() || !cc().getAuthorizationManager()->hasInternalAuthorization()) {
+        if (!cc().getAuthorizationManager()->hasInternalAuthorization()) {
             log() << "replauthenticate: requires internal authorization, failing" << endl;
             return false;
         }
@@ -1160,10 +1159,7 @@ namespace mongo {
             log() << "replauthenticate: can't authenticate to master server, user:" << u << endl;
             return false;
         }
-        if ( internalSecurity.pwd.length() > 0 ) {
-            conn->setAuthenticationTable(
-                    AuthenticationTable::getInternalSecurityAuthenticationTable() );
-        }
+
         return true;
     }
 

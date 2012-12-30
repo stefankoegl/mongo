@@ -72,7 +72,12 @@ namespace mongo {
     // This is called when we're about to yield.
     void S2NearCursor::noteLocation() { _results = priority_queue<Result>(); }
     // Called when we're un-yielding.
-    void S2NearCursor::checkLocation() { fillResults(); }
+    // Note that this is (apparently) a valid call sequence:
+    // 1. noteLocation()
+    // 2. ok()
+    // 3. checkLocation()
+    // As such we might have results and only want to fill the result queue if it's empty.
+    void S2NearCursor::checkLocation() { if (_results.empty()) { fillResults(); } }
 
     void S2NearCursor::explainDetails(BSONObjBuilder& b) {
         // TODO(hk): Dump more meaningful stats.
@@ -155,13 +160,14 @@ namespace mongo {
         verify(_results.empty());
         if (_innerRadius >= _outerRadius) { return; }
         if (_innerRadius > _maxDistance) { return; }
+        if (0 == _numToReturn) { return; }
 
         // We iterate until 1. our search radius is too big or 2. we find results.
         do {
             // Some of these arguments are opaque, look at the definitions of the involved classes.
             FieldRangeSet frs(_details->parentNS().c_str(), makeFRSObject(), false, false);
             shared_ptr<FieldRangeVector> frv(new FieldRangeVector(frs, _specForFRV, 1));
-            scoped_ptr<BtreeCursor> cursor(BtreeCursor::make(nsdetails(_details->parentNS().c_str()),
+            scoped_ptr<BtreeCursor> cursor(BtreeCursor::make(nsdetails(_details->parentNS()),
                                                              *_details, frv, 0, 1));
 
             // Do the actual search through this annulus.
@@ -228,12 +234,12 @@ namespace mongo {
         S2Polygon polygon;
         S2Polyline line;
         S2Cell point;
-        if (GeoJSONParser::parsePolygon(obj, &polygon)) {
+        if (GeoParser::parsePolygon(obj, &polygon)) {
             them = polygon.Project(us);
-        } else if (GeoJSONParser::parseLineString(obj, &line)) {
+        } else if (GeoParser::parseLineString(obj, &line)) {
             int tmp;
             them = line.Project(us, &tmp);
-        } else if (GeoJSONParser::parsePoint(obj, &point)) {
+        } else if (GeoParser::parsePoint(obj, &point)) {
             them = point.GetCenter();
         } else {
             warning() << "unknown geometry: " << obj.toString();

@@ -240,7 +240,10 @@ namespace mongo {
         virtual shared_ptr<Cursor> newCursor(const BSONObj& query, const BSONObj& order,
                                              int numWanted) const;
 
-        virtual IndexSuitability suitability(const BSONObj& query, const BSONObj& order) const {
+        virtual IndexSuitability suitability( const FieldRangeSet& queryConstraints ,
+                                              const BSONObj& order ) const {
+            BSONObj query = queryConstraints.originalQuery();
+
             BSONElement e = query.getFieldDotted(_geo.c_str());
             switch (e.type()) {
             case Object: {
@@ -402,7 +405,7 @@ namespace mongo {
             }
 
             // Slow undirty
-            scoped_ptr<BtreeCursor> cursor(BtreeCursor::make(nsdetails(g->getDetails()->parentNS().c_str()),
+            scoped_ptr<BtreeCursor> cursor(BtreeCursor::make(nsdetails(g->getDetails()->parentNS()),
                                             *(g->getDetails()), _key, _key, true, 1));
 
             int count = 0;
@@ -693,7 +696,7 @@ namespace mongo {
             shared_ptr<FieldRangeVector> frvMax(new FieldRangeVector(*(max._frs), *(max._spec), 1));
 
             min._cursor.reset(
-                            BtreeCursor::make(nsdetails(spec->getDetails()->parentNS().c_str()),
+                            BtreeCursor::make(nsdetails(spec->getDetails()->parentNS()),
                                               *(spec->getDetails()),
                                               frvMin,
                                               0,
@@ -701,7 +704,7 @@ namespace mongo {
                    );
 
             max._cursor.reset(
-                           BtreeCursor::make(nsdetails(spec->getDetails()->parentNS().c_str()),
+                           BtreeCursor::make(nsdetails(spec->getDetails()->parentNS()),
                                              *(spec->getDetails()),
                                              frvMax,
                                              0,
@@ -1071,8 +1074,8 @@ namespace mongo {
                     _expPrefix.reset(new GeoHash(_prefix));
 
                     // Find points inside this prefix
-                    while (_min.checkAndAdvance(_prefix, _foundInExp, this) && _foundInExp < maxFound && _found < maxAdded);
-                    while (_max.checkAndAdvance(_prefix, _foundInExp, this) && _foundInExp < maxFound && _found < maxAdded);
+                    while (_min.checkAndAdvance(_prefix, _foundInExp, this) && _foundInExp < maxFound && _found < maxAdded) {}
+                    while (_max.checkAndAdvance(_prefix, _foundInExp, this) && _foundInExp < maxFound && _found < maxAdded) {}
 
 #ifdef GEODEBUGGING
 
@@ -2373,9 +2376,11 @@ namespace mongo {
         Geo2dType * g = (Geo2dType*)id.getSpec().getType();
         verify(&id == g->getDetails());
 
+        // We support both "num" and "limit" options to control limit
         int numWanted = 100;
-        if (cmdObj["num"].isNumber()) {
-            numWanted = cmdObj["num"].numberInt();
+        const char* limitName = cmdObj["num"].isNumber() ? "num" : "limit";
+        if (cmdObj[limitName].isNumber()) {
+            numWanted = cmdObj[limitName].numberInt();
             verify(numWanted >= 0);
         }
 
@@ -2468,7 +2473,7 @@ namespace mongo {
         bool run(const string& dbname, BSONObj& cmdObj, int, string& errmsg, BSONObjBuilder& result, bool fromRepl) {
             string ns = dbname + "." + cmdObj.firstElement().valuestr();
 
-            NamespaceDetails * d = nsdetails(ns.c_str());
+            NamespaceDetails * d = nsdetails(ns);
             if (! d) {
                 errmsg = "can't find ns";
                 return false;

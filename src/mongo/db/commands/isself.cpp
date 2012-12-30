@@ -28,7 +28,6 @@
 #include "mongo/db/jsobj.h"
 #include "../../util/net/listen.h"
 #include "../commands.h"
-#include "../security.h"
 #include "mongo/util/net/hostandport.h"
 #include "mongo/client/dbclientinterface.h"
 
@@ -248,8 +247,6 @@ namespace mongo {
                 if (!conn.auth("local", internalSecurity.user, internalSecurity.pwd, errmsg, false)) {
                     return false;
                 }
-                conn.setAuthenticationTable(
-                        AuthenticationTable::getInternalSecurityAuthenticationTable() );
             }
 
             BSONObj out;

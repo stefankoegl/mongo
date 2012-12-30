@@ -165,6 +165,10 @@ namespace mongo {
         help << "no help defined";
     }
 
+    std::vector<BSONObj> Command::stopIndexBuilds(const std::string& dbname, const BSONObj& cmdObj) {
+        return std::vector<BSONObj>();
+    }
+
     Command* Command::findCommand( const string& name ) {
         map<string,Command*>::iterator i = _commands->find( name );
         if ( i == _commands->end() )
@@ -179,18 +183,17 @@ namespace mongo {
         return c->locktype();
     }
 
-    // TODO: remove this default implementation so that all Command subclasses have to explicitly
-    // declare their own.
-    void Command::addRequiredPrivileges(const std::string& dbname,
-                                        const BSONObj& cmdObj,
-                                        std::vector<Privilege>* out) {
-        if (!requiresAuth()) {
-            return;
+    void Command::appendCommandStatus(BSONObjBuilder& result, bool ok, const std::string& errmsg) {
+        BSONObj tmp = result.asTempObj();
+        bool have_ok = tmp.hasField("ok");
+        bool have_errmsg = tmp.hasField("errmsg");
+
+        if (!have_ok)
+            result.append( "ok" , ok ? 1.0 : 0.0 );
+
+        if (!ok && !have_errmsg) {
+            result.append("errmsg", errmsg);
         }
-        ActionSet actions;
-        actions.addAction(locktype() == WRITE ? ActionType::oldWrite : ActionType::oldRead);
-        Privilege privilege(adminOnly() ? "admin" : dbname, actions);
-        out->push_back(privilege);
     }
 
     void Command::logIfSlow( const Timer& timer, const string& msg ) {

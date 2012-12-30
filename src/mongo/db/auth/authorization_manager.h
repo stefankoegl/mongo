@@ -32,6 +32,9 @@
 
 namespace mongo {
 
+    // --noauth cmd line option
+    extern bool noauth;
+
     /**
      * Internal secret key info.
      */
@@ -56,11 +59,28 @@ namespace mongo {
         static const std::string SERVER_RESOURCE_NAME;
         static const std::string CLUSTER_RESOURCE_NAME;
 
+        static const std::string USER_NAME_FIELD_NAME;
+        static const std::string USER_SOURCE_FIELD_NAME;
+        static const std::string PASSWORD_FIELD_NAME;
+
+        static void setSupportOldStylePrivilegeDocuments(bool enabled);
+
+        // Checks to see if "doc" is a valid privilege document, assuming it is stored in the
+        // "system.users" collection of database "dbname".
+        //
+        // Returns Status::OK() if the document is good, or Status(ErrorCodes::BadValue), otherwise.
+        static Status checkValidPrivilegeDocument(const StringData& dbname, const BSONObj& doc);
+
         // Takes ownership of the externalState.
         explicit AuthorizationManager(AuthExternalState* externalState);
         ~AuthorizationManager();
 
-        // Takes ownership of the principal (by putting into _authenticatedPrincipals).
+        // Should be called at the beginning of every new request.  This performs the checks
+        // necessary to determine if localhost connections should be given full access.
+        // TODO: try to eliminate the need for this call.
+        void startRequest();
+
+        // Adds "principal" to the authorization manager, and takes ownership of it.
         void addAuthorizedPrincipal(Principal* principal);
 
         // Returns the authenticated principal with the given name.  Returns NULL
@@ -129,7 +149,10 @@ namespace mongo {
         // namespace.
         Status checkAuthForGetMore(const std::string& ns);
 
-        // Checks if this connection is authorized for all the given Privileges
+        // Checks if this connection is authorized for the given Privilege.
+        Status checkAuthForPrivilege(const Privilege& privilege);
+
+        // Checks if this connection is authorized for all the given Privileges.
         Status checkAuthForPrivileges(const vector<Privilege>& privileges);
 
         // Given a database name and a readOnly flag return an ActionSet describing all the actions
@@ -143,7 +166,19 @@ namespace mongo {
                                         const BSONObj& privilegeDocument,
                                         PrivilegeSet* result);
 
+        // Returns an ActionSet of all actions that can be be granted to users.  This does not
+        // include internal-only actions.
+        static ActionSet getAllUserActions();
+
     private:
+        // Finds the set of privileges attributed to "principal" in database "dbname",
+        // and adds them to the set of acquired privileges.
+        void _acquirePrivilegesForPrincipalFromDatabase(const std::string& dbname,
+                                                        const PrincipalName& principal);
+
+        // Checks to see if the given privilege is allowed, performing implicit privilege
+        // acquisition if enabled and necessary to resolve the privilege.
+        Status _probeForPrivilege(const Privilege& privilege);
 
         // Parses the old-style (pre 2.4) privilege document and returns a PrivilegeSet of all the
         // Privileges that the privilege document grants.
@@ -152,6 +187,23 @@ namespace mongo {
                 const PrincipalName& principal,
                 const BSONObj& privilegeDocument,
                 PrivilegeSet* result);
+
+        // Parses extended-form (2.4+) privilege documents and returns a PrivilegeSet of all the
+        // privileges that the document grants.
+        //
+        // The document, "privilegeDocument", is assumed to describe privileges for "principal", and
+        // to come from database "dbname".
+        static Status _buildPrivilegeSetFromExtendedPrivilegeDocument(
+                const std::string& dbname,
+                const PrincipalName& principal,
+                const BSONObj& privilegeDocument,
+                PrivilegeSet* result);
+
+        // Returns a new privilege that has replaced the actions needed to handle special casing
+        // certain namespaces like system.users and system.profile.
+        Privilege _modifyPrivilegeForSpecialCases(const Privilege& privilege);
+
+        static bool _doesSupportOldStylePrivileges;
 
         scoped_ptr<AuthExternalState> _externalState;
 

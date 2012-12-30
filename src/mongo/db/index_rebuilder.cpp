@@ -55,7 +55,7 @@ namespace mongo {
             BSONObj nsDoc = cursor->next();
             const char* ns = nsDoc["name"].valuestrsafe();
 
-            Client::Context ctx(ns, dbpath, false, false);
+            Client::Context ctx(ns, dbpath, false);
             NamespaceDetails* nsd = nsdetails(ns);
 
             if (!nsd || !nsd->indexBuildsInProgress) {
@@ -106,11 +106,6 @@ namespace mongo {
         // the db crashes before the new system.indexes entry is journalled, the index will be lost
         // forever.  Thus, we're assuming no journaling will happen between now and the entry being
         // re-written.
-
-        // We need to force a foreground index build to prevent replication from replaying an
-        // incompatible op (like a drop) during a yield.
-        // TODO: once commands can interrupt/wait for index builds, this can be removed.
-        indexObj = indexObj.removeField("background");
 
         try {
             const std::string ns = dbName + ".system.indexes";

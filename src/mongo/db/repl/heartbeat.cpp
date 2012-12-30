@@ -19,14 +19,12 @@
 #include <boost/thread/thread.hpp>
 
 #include "mongo/db/commands.h"
-#include "mongo/db/helpers/dblogger.h"
 #include "mongo/db/instance.h"
 #include "mongo/db/repl.h"
 #include "mongo/db/repl/bgsync.h"
 #include "mongo/db/repl/connections.h"
 #include "mongo/db/repl/health.h"
 #include "mongo/db/repl/rs.h"
-#include "mongo/db/security.h"
 #include "mongo/util/background.h"
 #include "mongo/util/concurrency/msg.h"
 #include "mongo/util/concurrency/task.h"
@@ -74,10 +72,6 @@ namespace mongo {
                checks many things that are pre-initialization. */
             if( !replSet ) {
                 errmsg = "not running with --replSet";
-                return false;
-            }
-
-            if (!checkAuth(errmsg, result)) {
                 return false;
             }
 
@@ -175,11 +169,7 @@ namespace mongo {
                 !Lock::somethingWriteLocked() || theReplSet == 0 || !theReplSet->lockedByMe() );
 
         ScopedConn conn(memberFullName);
-        return conn.runCommand("admin",
-                               cmd,
-                               result,
-                               0,
-                               &AuthenticationTable::getInternalSecurityAuthenticationTable());
+        return conn.runCommand("admin", cmd, result, 0);
     }
 
     /**

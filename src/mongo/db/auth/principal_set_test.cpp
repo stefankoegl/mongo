@@ -25,11 +25,12 @@
 #define ASSERT_NULL(EXPR) ASSERT_FALSE((EXPR))
 
 namespace mongo {
-namespace {
 
     static inline std::ostream& operator<<(std::ostream& os, const PrincipalName& pname) {
         return os << pname.toString();
     }
+
+namespace {
 
     TEST(PrincipalSetTest, BasicTest) {
         PrincipalSet set;
@@ -87,8 +88,8 @@ namespace {
 
         iter = pset.getNames();
         ASSERT(iter.more());
-        ASSERT_EQUALS(iter.next(), PrincipalName("bob", "test"));
         ASSERT_EQUALS(*iter, PrincipalName("bob", "test"));
+        ASSERT_EQUALS(iter.next(), PrincipalName("bob", "test"));
         ASSERT(!iter.more());
     }
 

@@ -311,7 +311,8 @@ namespace mongo {
         const char *name = io.getStringField("name");
         uassert(12523, "no index name specified", *name);
 
-        sourceCollection = nsdetails(sourceNS.c_str());
+
+        sourceCollection = nsdetails(sourceNS);
         if( sourceCollection == 0 ) {
             // try to create it
             string err;
@@ -319,7 +320,7 @@ namespace mongo {
                 problem() << "ERROR: failed to create collection while adding its index. " << sourceNS << endl;
                 return false;
             }
-            sourceCollection = nsdetails(sourceNS.c_str());
+            sourceCollection = nsdetails(sourceNS);
             tlog() << "info: creating collection " << sourceNS << " on add index" << endl;
             verify( sourceCollection );
         }

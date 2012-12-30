@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <ctype.h>
+
 #include <string>
 #include <vector>
 
@@ -63,4 +65,8 @@ namespace mongo {
         bool _lexOnly;
     };
     
+    // TODO: Sane-ify core string functionality
+    // For now, this needs to be near the LexNumCmp or else
+    int versionCmp(const StringData rhs, const StringData lhs);
+
 } // namespace mongo

@@ -83,17 +83,32 @@ for (var iter = 0; iter < numIterations; ++iter) {
                "Setup FAILURE: getLastError was null for insert, but inserted count was wrong");
     }
 
-
+    // M/R is strange in that it chooses the output shards based on currently sharded collections in
+    // the database.  The upshot is that we need a sharded collection on both shards in order to ensure
+    // M/R will output to two shards.
+    var shards = config.shards.find().toArray();
+    var hasChunkOnShard = function(coll, shard) {
+        return config.chunks.findOne({ ns : coll + "", shard : shard }) != null;
+    }
+    
+    // Wait for at least one balance round.
+    assert.soon(function(){
+        return hasChunkOnShard("test.foo", shards[0]._id) && 
+               hasChunkOnShard("test.foo", shards[1]._id);
+    }, 2 * 60 * 1000);
+    
+    // Now we can proceed, since we have a collection on both shards.
+    
     // Do the MapReduce step
     jsTest.log("Setup OK: count matches (" + numDocs + ") -- Starting MapReduce");
     var res = testDB.foo.mapReduce(map2, reduce2, {out: {replace: "mrShardedOut", sharded: true}});
+    jsTest.log("MapReduce results:");
+    printjson(res);
     var reduceOutputCount = res.counts.output;
     assert.eq(numDocs,
               reduceOutputCount,
               "MapReduce FAILED: res.counts.output = " + reduceOutputCount +
                    ", should be " + numDocs);
-    jsTest.log("MapReduce results:");
-    printjson(res);
 
     jsTest.log("Checking that all MapReduce output documents are in output collection");
     var outColl = testDB["mrShardedOut"];

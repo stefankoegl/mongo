@@ -16,6 +16,8 @@
 
 #include "mongo/pch.h"
 
+#include "mongo/base/counter.h"
+#include "mongo/db/commands/server_status.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/database.h"
 #include "mongo/db/kill_current_op.h"
@@ -64,6 +66,32 @@ namespace mongo {
         _active = true; // this should be last for ui clarity
     }
 
+    CurOp* CurOp::getOp(const BSONObj& criteria) {
+        Matcher matcher(criteria);
+        Client& me = cc();
+
+        scoped_lock client_lock(Client::clientsMutex);
+        for (std::set<Client*>::iterator it = Client::clients.begin();
+             it != Client::clients.end();
+             it++) {
+
+            Client *client = *it;
+            verify(client);
+
+            CurOp* curop = client->curop();
+            if (client == &me || curop == NULL) {
+                continue;
+            }
+
+            BSONObj info = curop->info();
+            if (matcher.matches(info)) {
+                return curop;
+            }
+        }
+
+        return NULL;
+    }
+
     void CurOp::reset( const HostAndPort& remote, int op ) {
         reset();
         if( _remote != remote ) {
@@ -73,13 +101,17 @@ namespace mongo {
         _op = op;
     }
         
-    ProgressMeter& CurOp::setMessage( const char * msg , unsigned long long progressMeterTotal , int secondsBetween ) {
+    ProgressMeter& CurOp::setMessage(const char * msg,
+                                     std::string name,
+                                     unsigned long long progressMeterTotal,
+                                     int secondsBetween) {
         if ( progressMeterTotal ) {
             if ( _progressMeter.isActive() ) {
                 cout << "about to assert, old _message: " << _message << " new message:" << msg << endl;
                 verify( ! _progressMeter.isActive() );
             }
             _progressMeter.reset( progressMeterTotal , secondsBetween );
+            _progressMeter.setName(name);
         }
         else {
             _progressMeter.finished();
@@ -109,7 +141,7 @@ namespace mongo {
         strncpy( _ns, context->ns(), Namespace::MaxNsLen);
         _ns[Namespace::MaxNsLen] = 0;
 
-        _dbprofile = std::max( context->_db ? context->_db->profile : 0 , _dbprofile );
+        _dbprofile = std::max( context->_db ? context->_db->getProfilingLevel() : 0 , _dbprofile );
     }
     
     void CurOp::leave( Client::Context * context ) {
@@ -196,4 +228,43 @@ namespace mongo {
 
     AtomicUInt CurOp::_nextOpNum;
 
+    static Counter64 returnedCounter;
+    static Counter64 insertedCounter;
+    static Counter64 updatedCounter;
+    static Counter64 deletedCounter;
+    static Counter64 scannedCounter;
+
+    static ServerStatusMetricField<Counter64> displayReturned( "document.returned", &returnedCounter );
+    static ServerStatusMetricField<Counter64> displayUpdated( "document.updated", &updatedCounter );
+    static ServerStatusMetricField<Counter64> displayInserted( "document.inserted", &insertedCounter );
+    static ServerStatusMetricField<Counter64> displayDeleted( "document.deleted", &deletedCounter );
+    static ServerStatusMetricField<Counter64> displayScanned( "document.scanned", &scannedCounter );
+
+    static Counter64 idhackCounter;
+    static Counter64 scanAndOrderCounter;
+    static Counter64 fastmodCounter;
+
+    static ServerStatusMetricField<Counter64> displayIdhack( "operation.idhack", &idhackCounter );
+    static ServerStatusMetricField<Counter64> displayScanAndOrder( "operation.scanAndOrder", &scanAndOrderCounter );
+    static ServerStatusMetricField<Counter64> displayFastMod( "operation.fastmod", &fastmodCounter );
+
+    void OpDebug::recordStats() {
+        if ( nreturned > 0 )
+            returnedCounter.increment( nreturned );
+        if ( ninserted > 0 )
+            insertedCounter.increment( ninserted );
+        if ( nupdated > 0 )
+            updatedCounter.increment( nupdated );
+        if ( ndeleted > 0 )
+            deletedCounter.increment( ndeleted );
+        if ( nscanned > 0 )
+            scannedCounter.increment( nscanned );
+
+        if ( idhack )
+            idhackCounter.increment();
+        if ( scanAndOrder )
+            scanAndOrderCounter.increment();
+        if ( fastmod )
+            fastmodCounter.increment();
+    }
 }

@@ -732,7 +732,7 @@ namespace mongo {
         case Symbol:
         case String: {
             StringData sd = getStringData();
-            boost::hash_range(seed, sd.rawData(), (sd.rawData() + sd.size()));
+            MurmurHash3_x86_32(sd.rawData(), sd.size(), seed, &seed);
             break;
         }
 
@@ -755,14 +755,14 @@ namespace mongo {
 
         case BinData: {
             StringData sd = getStringData();
-            boost::hash_range(seed, sd.rawData(), (sd.rawData() + sd.size()));
+            MurmurHash3_x86_32(sd.rawData(), sd.size(), seed, &seed);
             boost::hash_combine(seed, _storage.binDataType());
             break;
         }
 
         case RegEx: {
             StringData sd = getStringData();
-            boost::hash_range(seed, sd.rawData(), (sd.rawData() + sd.size()));
+            MurmurHash3_x86_32(sd.rawData(), sd.size(), seed, &seed);
             break;
         }
 

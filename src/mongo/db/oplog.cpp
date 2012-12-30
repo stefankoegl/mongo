@@ -26,6 +26,7 @@
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/privilege.h"
 #include "mongo/db/commands.h"
+#include "mongo/db/index_builder.h"
 #include "mongo/db/index_update.h"
 #include "mongo/db/instance.h"
 #include "mongo/db/ops/update.h"
@@ -76,13 +77,13 @@ namespace mongo {
         {
             const char *logns = rsoplog;
             if ( rsOplogDetails == 0 ) {
-                Client::Context ctx( logns , dbpath, false);
+                Client::Context ctx(logns , dbpath);
                 localDB = ctx.db();
                 verify( localDB );
                 rsOplogDetails = nsdetails(logns);
                 massert(13389, "local.oplog.rs missing. did you drop it? if so restart server", rsOplogDetails);
             }
-            Client::Context ctx( logns , localDB, false );
+            Client::Context ctx(logns , localDB);
             {
                 int len = op.objsize();
                 Record *r = theDataFileMgr.fast_oplog_insert(rsOplogDetails, logns, len);
@@ -207,13 +208,13 @@ namespace mongo {
         {
             const char *logns = rsoplog;
             if ( rsOplogDetails == 0 ) {
-                Client::Context ctx( logns , dbpath, false);
+                Client::Context ctx(logns , dbpath);
                 localDB = ctx.db();
                 verify( localDB );
                 rsOplogDetails = nsdetails(logns);
                 massert(13347, "local.oplog.rs missing. did you drop it? if so restart server", rsOplogDetails);
             }
-            Client::Context ctx( logns , localDB, false );
+            Client::Context ctx(logns , localDB);
             r = theDataFileMgr.fast_oplog_insert(rsOplogDetails, logns, len);
             /* todo: now() has code to handle clock skew.  but if the skew server to server is large it will get unhappy.
                      this code (or code in now() maybe) should be improved.
@@ -250,7 +251,7 @@ namespace mongo {
         mutex::scoped_lock lk2(OpTime::m);
 
         const OpTime ts = OpTime::now(lk2);
-        Client::Context context("",0,false);
+        Client::Context context("", 0);
 
         /* we jump through a bunch of hoops here to avoid copying the obj buffer twice --
            instead we do a single copy to the destination position in the memory mapped file.
@@ -276,17 +277,17 @@ namespace mongo {
         if( logNS == 0 ) {
             logNS = "local.oplog.$main";
             if ( localOplogMainDetails == 0 ) {
-                Client::Context ctx( logNS , dbpath, false);
+                Client::Context ctx(logNS , dbpath);
                 localDB = ctx.db();
                 verify( localDB );
                 localOplogMainDetails = nsdetails(logNS);
                 verify( localOplogMainDetails );
             }
-            Client::Context ctx( logNS , localDB, false );
+            Client::Context ctx(logNS , localDB);
             r = theDataFileMgr.fast_oplog_insert(localOplogMainDetails, logNS, len);
         }
         else {
-            Client::Context ctx( logNS, dbpath, false );
+            Client::Context ctx(logNS, dbpath);
             verify( nsdetails( logNS ) );
             // first we allocate the space, then we fill it below.
             r = theDataFileMgr.fast_oplog_insert( nsdetails( logNS ), logNS, len);
@@ -766,9 +767,16 @@ namespace mongo {
 
             const char *p = strchr(ns, '.');
             if ( p && strcmp(p, ".system.indexes") == 0 ) {
-                // updates aren't allowed for indexes -- so we will do a regular insert. if index already
-                // exists, that is ok.
-                theDataFileMgr.insert(ns, (void*) o.objdata(), o.objsize());
+                if (o["background"].trueValue()) {
+                    IndexBuilder* builder = new IndexBuilder(ns, o);
+                    // This spawns a new thread and returns immediately.
+                    builder->go();
+                }
+                else {
+                    IndexBuilder builder(ns, o);
+                    // Finish the foreground build before returning
+                    builder.build();
+                }
             }
             else {
                 // do upserts for inserts as we might get replayed more than once
@@ -945,7 +953,7 @@ namespace mongo {
                 BSONElement e = i.next();
                 const BSONObj& temp = e.Obj();
                 
-                Client::Context ctx( temp["ns"].String() ); // this handles security
+                Client::Context ctx(temp["ns"].String());
                 bool failed = applyOperation_inlock(temp, false, alwaysUpsert);
                 ab.append(!failed);
                 if ( failed )

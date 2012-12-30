@@ -17,10 +17,12 @@
 // strategy_simple.cpp
 
 #include "pch.h"
-#include "request.h"
-#include "cursors.h"
-#include "../client/connpool.h"
-#include "../db/commands.h"
+
+#include "mongo/client/connpool.h"
+#include "mongo/db/commands.h"
+#include "mongo/s/request.h"
+#include "mongo/s/cursors.h"
+#include "mongo/s/version_manager.h"
 
 namespace mongo {
 
@@ -72,13 +74,10 @@ namespace mongo {
                         }
                     }
 
-                    bool ok = Command::runAgainstRegistered(q.ns, cmdObj, builder, q.queryOptions);
-                    if ( ok ) {
-                        BSONObj x = builder.done();
-                        replyToQuery(0, r.p(), r.m(), x);
-                        return;
-                    }
-                    break;
+                    Command::runAgainstRegistered(q.ns, cmdObj, builder, q.queryOptions);
+                    BSONObj x = builder.done();
+                    replyToQuery(0, r.p(), r.m(), x);
+                    return;
                 }
                 catch ( StaleConfigException& e ) {
                     if ( loops <= 0 )
@@ -103,10 +102,6 @@ namespace mongo {
                     return;
                 }
             }
-
-            string commandName = q.query.firstElementFieldName();
-
-            uasserted(13390, "unrecognized command: " + commandName);
         }
 
         // Deprecated

@@ -502,14 +502,6 @@ namespace mongo {
 
         const char *ns() const { return _ns.c_str(); }
         
-        /**
-         * @return a simplified query from the extreme values of the non universal
-         * fields.
-         * @param fields If specified, the fields of the returned object are
-         * ordered to match those of 'fields'.
-         */
-        BSONObj simplifiedQuery( const BSONObj &fields = BSONObj() ) const;
-        
         QueryPattern pattern( const BSONObj &sort = BSONObj() ) const;
         SpecialIndices getSpecial() const;
 
@@ -646,7 +638,6 @@ namespace mongo {
         void assertValidIndex( const NamespaceDetails *d, int idxNo ) const;
         void assertValidIndexOrNoIndex( const NamespaceDetails *d, int idxNo ) const;
         /** matchPossibleForIndex() must be true. */
-        BSONObj simplifiedQueryForIndex( NamespaceDetails *d, int idxNo, const BSONObj &keyPattern ) const;        
         FieldRangeSet _singleKey;
         FieldRangeSet _multiKey;
         friend class OrRangeGenerator;

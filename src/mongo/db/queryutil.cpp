@@ -1387,37 +1387,6 @@ namespace mongo {
         return *ret;
     }
 
-    BSONObj FieldRangeSet::simplifiedQuery( const BSONObj &_fields ) const {
-        BSONObj fields = _fields;
-        if ( fields.isEmpty() ) {
-            BSONObjBuilder b;
-            for( map<string,FieldRange>::const_iterator i = _ranges.begin(); i != _ranges.end(); ++i ) {
-                b.append( i->first, 1 );
-            }
-            fields = b.obj();
-        }
-        BSONObjBuilder b;
-        BSONObjIterator i( fields );
-        while( i.more() ) {
-            BSONElement e = i.next();
-            const char *name = e.fieldName();
-            const FieldRange &eRange = range( name );
-            verify( !eRange.empty() );
-            if ( eRange.equality() )
-                b.appendAs( eRange.min(), name );
-            else if ( !eRange.universal() ) {
-                BSONObj o;
-                BSONObjBuilder c;
-                c.appendAs( eRange.min(), eRange.minInclusive() ? "$gte" : "$gt" );
-                c.appendAs( eRange.max(), eRange.maxInclusive() ? "$lte" : "$lt" );
-                o = c.obj();
-                b.append( name, o );
-            }
-        }
-        return b.obj();
-    }
-
-
     bool FieldRangeSet::isPointIntervalSet( const string& fieldname ) const {
 
         const vector<FieldInterval>& intervals = range( fieldname.c_str() ).intervals();
@@ -1502,10 +1471,6 @@ namespace mongo {
                     "multiKey" << _multiKey.toString()
                     ).jsonString();
     }
-    
-    BSONObj FieldRangeSetPair::simplifiedQueryForIndex( NamespaceDetails *d, int idxNo, const BSONObj &keyPattern ) const {
-        return frsForIndex( d, idxNo ).simplifiedQuery( keyPattern );
-    }    
     
     void FieldRangeSetPair::assertValidIndex( const NamespaceDetails *d, int idxNo ) const {
         massert( 14048, "FieldRangeSetPair invalid index specified", idxNo >= 0 && idxNo < d->nIndexes );   

@@ -33,6 +33,7 @@
 #include "mongo/db/curop-inl.h"
 #include "mongo/db/extsort.h"
 #include "mongo/db/index.h"
+#include "mongo/db/index_builder.h"
 #include "mongo/db/index_update.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/kill_current_op.h"
@@ -194,7 +195,9 @@ namespace mongo {
             extents.push_back(L);
         log() << "compact " << extents.size() << " extents" << endl;
 
-        ProgressMeterHolder pm( cc().curop()->setMessage( "compact extent" , extents.size() ) );
+        ProgressMeterHolder pm(cc().curop()->setMessage("compact extent",
+                                                        "Extent Compating Progress",
+                                                        extents.size()));
 
         // same data, but might perform a little different after compact?
         NamespaceDetailsTransient::get(ns).clearQueryCache();
@@ -317,7 +320,7 @@ namespace mongo {
             Lock::DBWrite lk(ns);
             BackgroundOperation::assertNoBgOpInProgForNs(ns.c_str());
             Client::Context ctx(ns);
-            NamespaceDetails *d = nsdetails(ns.c_str());
+            NamespaceDetails *d = nsdetails(ns);
             massert( 13660, str::stream() << "namespace " << ns << " does not exist", d );
             massert( 13661, "cannot compact capped collection", !d->isCapped() );
             log() << "compact " << ns << " begin" << endl;
@@ -363,6 +366,15 @@ namespace mongo {
         virtual bool requiresAuth() { return true; }
         CompactCmd() : Command("compact") { }
 
+        virtual std::vector<BSONObj> stopIndexBuilds(const std::string& dbname, const BSONObj& cmdObj) {
+            std::string systemIndexes = dbname+".system.indexes";
+            std::string coll = cmdObj.firstElement().valuestr();
+            std::string ns = dbname + "." + coll;
+            BSONObj criteria = BSON("ns" << systemIndexes << "op" << "insert" << "insert.ns" << ns);
+
+            return IndexBuilder::killMatchingIndexBuilds(criteria);
+        }
+
         virtual bool run(const string& db, BSONObj& cmdObj, int, string& errmsg, BSONObjBuilder& result, bool fromRepl) {
             string coll = cmdObj.firstElement().valuestr();
             if( coll.empty() || db.empty() ) {
@@ -390,7 +402,7 @@ namespace mongo {
             {
                 Lock::DBWrite lk(ns);
                 Client::Context ctx(ns);
-                NamespaceDetails *d = nsdetails(ns.c_str());
+                NamespaceDetails *d = nsdetails(ns);
                 if( ! d ) {
                     errmsg = "namespace does not exist";
                     return false;
@@ -413,8 +425,13 @@ namespace mongo {
                 verify( pb >= 0 && pb <= 1024 * 1024 );
             }
 
+            std::vector<BSONObj> indexesInProg = stopIndexBuilds(db, cmdObj);
+
             bool validate = !cmdObj.hasElement("validate") || cmdObj["validate"].trueValue(); // default is true at the moment
             bool ok = compact(ns, errmsg, validate, result, pf, pb);
+
+            IndexBuilder::restoreIndexes(db+".system.indexes", indexesInProg);
+
             return ok;
         }
     };

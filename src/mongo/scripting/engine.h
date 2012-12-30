@@ -160,12 +160,8 @@ namespace mongo {
         ScriptEngine();
         virtual ~ScriptEngine();
 
-        virtual Scope * newScope() {
-            Scope *s = createScope();
-            if ( s && _scopeInitCallback )
-                _scopeInitCallback( *s );
-            installGlobalUtils( *s );
-            return s;
+        virtual Scope* newScope() {
+            return createScope();
         }
 
         virtual void runTest() = 0;
@@ -193,14 +189,14 @@ namespace mongo {
         // poll for interrupts
 
         // the interrupt functions must not wait indefinitely on a lock
-        virtual void interrupt( unsigned opSpec ) {}
+        virtual void interrupt(unsigned opId) {}
         virtual void interruptAll() {}
 
-        static void setGetInterruptSpecCallback( unsigned ( *func )() ) { _getInterruptSpecCallback = func; }
-        static bool haveGetInterruptSpecCallback() { return _getInterruptSpecCallback; }
-        static unsigned getInterruptSpec() {
-            massert( 13474, "no _getInterruptSpecCallback", _getInterruptSpecCallback );
-            return _getInterruptSpecCallback();
+        static void setGetCurrentOpIdCallback(unsigned (*func)()) { _getCurrentOpIdCallback = func; }
+        static bool haveGetCurrentOpIdCallback() { return _getCurrentOpIdCallback; }
+        static unsigned getCurrentOpId() {
+            massert(13474, "no _getCurrentOpIdCallback", _getCurrentOpIdCallback);
+            return _getCurrentOpIdCallback();
         }
 
         static void setCheckInterruptCallback( const char * ( *func )() ) { _checkInterruptCallback = func; }
@@ -216,12 +212,12 @@ namespace mongo {
 
     protected:
         virtual Scope * createScope() = 0;
+        void (*_scopeInitCallback)(Scope &);
 
     private:
-        void ( *_scopeInitCallback )( Scope & );
-        static void ( *_connectCallback )( DBClientWithCommands & );
-        static const char * ( *_checkInterruptCallback )();
-        static unsigned ( *_getInterruptSpecCallback )();
+        static void (*_connectCallback)(DBClientWithCommands&);
+        static const char* (*_checkInterruptCallback)();
+        static unsigned (*_getCurrentOpIdCallback)();
     };
 
     bool hasJSReturn( const string& s );

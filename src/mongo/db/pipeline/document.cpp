@@ -28,23 +28,27 @@ namespace mongo {
     using namespace mongoutils;
 
     Position DocumentStorage::findField(StringData requested) const {
+        int reqSize = requested.size(); // get size calculation out of the way if needed
+
         if (_numFields >= HASH_TAB_MIN) { // hash lookup
             const unsigned bucket = bucketForKey(requested);
 
             Position pos = _hashTab[bucket];
             while (pos.found()) {
                 const ValueElement& elem = getField(pos);
-                if (requested == elem.nameSD())
+                if (elem.nameLen == reqSize
+                    && memcmp(requested.rawData(), elem._name, reqSize) == 0) {
                     return pos;
+                }
 
                 // possible collision
                 pos = elem.nextCollision;
             }
         }
-        else if (_numFields) { // linear scan
+        else { // linear scan
             for (DocumentStorageIterator it = iteratorAll(); !it.atEnd(); it.advance()) {
-                if (size_t(it->nameLen) == requested.size()
-                    && requested == it->nameSD()) {
+                if (it->nameLen == reqSize
+                    && memcmp(requested.rawData(), it->_name, reqSize) == 0) {
                     return it.position();
                 }
             }
@@ -217,7 +221,7 @@ namespace mongo {
 
     void Document::toBson(BSONObjBuilder* pBuilder) const {
         for (DocumentStorageIterator it = storage().iterator(); !it.atEnd(); it.advance()) {
-            *pBuilder << it->name << it->val;
+            *pBuilder << it->nameSD() << it->val;
         }
     }
 
@@ -333,7 +337,7 @@ namespace mongo {
             const ValueElement& rField = rIt.get();
             const ValueElement& lField = lIt.get();
 
-            const int nameCmp = strcmp(lField.name, rField.name);
+            const int nameCmp = lField.nameSD().compare(rField.nameSD());
             if (nameCmp)
                 return nameCmp; // field names are unequal
 
@@ -354,7 +358,7 @@ namespace mongo {
         const char* prefix = "{";
 
         for (DocumentStorageIterator it = storage().iterator(); !it.atEnd(); it.advance()) {
-            out << prefix << it->name << ": " << it->val.toString();
+            out << prefix << it->nameSD() << ": " << it->val.toString();
             prefix = ", ";
         }
         out << '}';

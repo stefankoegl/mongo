@@ -424,8 +424,18 @@ namespace mongo {
     };
 
 
-    class ExpressionCond :
-        public ExpressionNary {
+    class ExpressionConcat : public ExpressionNary {
+    public:
+        // virtuals from ExpressionNary
+        virtual ~ExpressionConcat();
+        virtual Value evaluate(const Document& input) const;
+        virtual const char *getOpName() const;
+
+        static intrusive_ptr<ExpressionNary> create();
+    };
+
+
+    class ExpressionCond : public ExpressionNary {
     public:
         // virtuals from ExpressionNary
         virtual ~ExpressionCond();
@@ -730,6 +740,22 @@ namespace mongo {
     };
 
 
+    class ExpressionMillisecond :
+        public ExpressionNary {
+    public:
+        // virtuals from ExpressionNary
+        virtual ~ExpressionMillisecond();
+        virtual Value evaluate(const Document& document) const;
+        virtual const char* getOpName() const;
+        virtual void addOperand(const intrusive_ptr<Expression>& pExpression);
+
+        static intrusive_ptr<ExpressionNary> create();
+
+    private:
+        ExpressionMillisecond();
+    };
+
+
     class ExpressionMinute :
         public ExpressionNary {
     public:
@@ -934,43 +960,6 @@ namespace mongo {
         vector<string> _order;
 
         bool _excludeId;
-
-        /*
-          Utility object for collecting emitPaths() results in a BSON
-          object.
-         */
-        class BuilderPathSink :
-            public PathSink {
-        public:
-            // virtuals from PathSink
-            virtual void path(const string &path, bool include);
-
-            /*
-              Create a PathSink that writes paths to a BSONObjBuilder,
-              to create an object in the form of { path:is_included,...}
-
-              This object uses a builder pointer that won't guarantee the
-              lifetime of the builder, so make sure it outlasts the use of
-              this for an emitPaths() call.
-
-              @param pBuilder to the builder to write paths to
-             */
-            BuilderPathSink(BSONObjBuilder *pBuilder);
-
-        private:
-            BSONObjBuilder *pBuilder;
-        };
-
-        /* utility class used by emitPaths() */
-        class PathPusher :
-            boost::noncopyable {
-        public:
-            PathPusher(vector<string> *pvPath, const string &s);
-            ~PathPusher();
-
-        private:
-            vector<string> *pvPath;
-        };
     };
 
 
@@ -1160,20 +1149,4 @@ namespace mongo {
     inline size_t ExpressionObject::getFieldCount() const {
         return _expressions.size();
     }
-
-    inline ExpressionObject::BuilderPathSink::BuilderPathSink(
-        BSONObjBuilder *pB):
-        pBuilder(pB) {
-    }
-
-    inline ExpressionObject::PathPusher::PathPusher(
-        vector<string> *pTheVPath, const string &s):
-        pvPath(pTheVPath) {
-        pvPath->push_back(s);
-    }
-
-    inline ExpressionObject::PathPusher::~PathPusher() {
-        pvPath->pop_back();
-    }
-
 }

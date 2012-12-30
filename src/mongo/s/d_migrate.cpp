@@ -25,44 +25,44 @@
 #include "pch.h"
 
 #include <algorithm>
+#include <boost/thread/thread.hpp>
 #include <map>
 #include <string>
 #include <vector>
 
-#include <boost/thread/thread.hpp>
-
+#include "mongo/client/connpool.h"
+#include "mongo/client/dbclientcursor.h"
+#include "mongo/client/distlock.h"
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/auth/privilege.h"
-#include "mongo/db/dbhelpers.h"
-#include "../db/commands.h"
-#include "mongo/db/hasher.h"
-#include "../db/jsobj.h"
-#include "../db/cmdline.h"
-#include "../db/queryoptimizer.h"
 #include "mongo/db/btreecursor.h"
-#include "../db/repl_block.h"
-#include "../db/dur.h"
-#include "../db/clientcursor.h"
-#include "../db/pagefault.h"
-#include "../db/repl.h"
-#include "../db/kill_current_op.h"
-
-#include "../client/connpool.h"
-#include "../client/distlock.h"
-#include "mongo/client/dbclientcursor.h"
-
-#include "../util/queue.h"
-#include "../util/startup_test.h"
-#include "../util/processinfo.h"
-#include "../util/ramlog.h"
+#include "mongo/db/clientcursor.h"
+#include "mongo/db/cmdline.h"
+#include "mongo/db/commands.h"
+#include "mongo/db/dbhelpers.h"
+#include "mongo/db/dur.h"
+#include "mongo/db/hasher.h"
+#include "mongo/db/jsobj.h"
+#include "mongo/db/kill_current_op.h"
+#include "mongo/db/pagefault.h"
+#include "mongo/db/queryoptimizer.h"
+#include "mongo/db/repl.h"
+#include "mongo/db/repl_block.h"
+#include "mongo/db/repl/rs.h"
+#include "mongo/db/repl/rs_config.h"
+#include "mongo/s/chunk.h"
+#include "mongo/s/chunk_version.h"
+#include "mongo/s/config.h"
+#include "mongo/s/d_logic.h"
+#include "mongo/s/shard.h"
+#include "mongo/s/type_chunk.h"
 #include "mongo/util/elapsed_tracker.h"
-
-#include "shard.h"
-#include "d_logic.h"
-#include "config.h"
-#include "chunk.h"
+#include "mongo/util/processinfo.h"
+#include "mongo/util/queue.h"
+#include "mongo/util/ramlog.h"
+#include "mongo/util/startup_test.h"
 
 using namespace std;
 
@@ -70,7 +70,7 @@ namespace mongo {
 
     BSONObj findShardKeyIndexPattern_locked( const string& ns , const BSONObj& shardKeyPattern ) {
         verify( Lock::isLocked() );
-        NamespaceDetails* nsd = nsdetails( ns.c_str() );
+        NamespaceDetails* nsd = nsdetails( ns );
         verify( nsd );
         const IndexDetails* idx = nsd->findIndexByPrefix( shardKeyPattern , true );  /* require single key */
         verify( idx );
@@ -453,7 +453,7 @@ namespace mongo {
          */
         bool storeCurrentLocs( long long maxChunkSize , string& errmsg , BSONObjBuilder& result ) {
             Client::ReadContext ctx( _ns );
-            NamespaceDetails *d = nsdetails( _ns.c_str() );
+            NamespaceDetails *d = nsdetails( _ns );
             if ( ! d ) {
                 errmsg = "ns not found, should be impossible";
                 return false;
@@ -467,8 +467,9 @@ namespace mongo {
                 return false;
             }
             // Assume both min and max non-empty, append MinKey's to make them fit chosen index
-            BSONObj min = Helpers::modifiedRangeBound( _min , idx->keyPattern() , -1 );
-            BSONObj max = Helpers::modifiedRangeBound( _max , idx->keyPattern() , -1 );
+            KeyPattern kp( idx->keyPattern() );
+            BSONObj min = Helpers::toKeyFormat( kp.extendRangeBound( _min, false ) );
+            BSONObj max = Helpers::toKeyFormat( kp.extendRangeBound( _max, false ) );
 
             BtreeCursor* btreeCursor = BtreeCursor::make( d , *idx , min , max , false , 1 );
             auto_ptr<ClientCursor> cc(
@@ -544,7 +545,7 @@ namespace mongo {
             int allocSize;
             {
                 Client::ReadContext ctx( _ns );
-                NamespaceDetails *d = nsdetails( _ns.c_str() );
+                NamespaceDetails *d = nsdetails( _ns );
                 verify( d );
                 scoped_spinlock lk( _trackerLocks );
                 allocSize = std::min(BSONObjMaxUserSize, (int)((12 + d->averageObjectSize()) * _cloneLocs.size()));
@@ -728,7 +729,6 @@ namespace mongo {
                                                         OID::gen().toString()).c_str());
 
         if (!noauth) {
-            cc().getAuthenticationInfo()->authorize("local", internalSecurity.user);
             cc().getAuthorizationManager()->grantInternalAuthorization("_cleanupOldData");
         }
 
@@ -880,12 +880,27 @@ namespace mongo {
             if( cmdObj["toShard"].type() == String ){
                 to = cmdObj["toShard"].String();
             }
-            
-            // if we do a w=2 after very write
+
+            // if we do a w=2 after every write
             bool secondaryThrottle = cmdObj["secondaryThrottle"].trueValue();
-            if ( secondaryThrottle && ! anyReplEnabled() ) {
-                secondaryThrottle = false;
-                warning() << "secondaryThrottle selected but no replication" << endl;
+            if ( secondaryThrottle ) {
+                if ( theReplSet ) {
+                    if ( theReplSet->config().getMajority() <= 1 ) {
+                        secondaryThrottle = false;
+                        warning() << "not enough nodes in set to use secondaryThrottle: "
+                                  << " majority: " << theReplSet->config().getMajority()
+                                  << endl;
+                    }
+                }
+                else if ( !anyReplEnabled() ) {
+                    secondaryThrottle = false;
+                    warning() << "secondaryThrottle selected but no replication" << endl;
+                }
+                else {
+                    // master/slave
+                    secondaryThrottle = false;
+                    warning() << "secondaryThrottle not allowed with master/slave" << endl;
+                }
             }
 
             // Do inline deletion
@@ -989,8 +1004,8 @@ namespace mongo {
             BSONObj chunkInfo = BSON("min" << min << "max" << max << "from" << fromShard.getName() << "to" << toShard.getName() );
             configServer.logChange( "moveChunk.start" , ns , chunkInfo );
 
-            ShardChunkVersion maxVersion;
-            ShardChunkVersion startingVersion;
+            ChunkVersion maxVersion;
+            ChunkVersion startingVersion;
             string myOldShard;
             {
                 scoped_ptr<ScopedDbConnection> conn(
@@ -1000,12 +1015,12 @@ namespace mongo {
                 BSONObj x;
                 BSONObj currChunk;
                 try{
-                    x = conn->get()->findOne(ConfigNS::chunk,
-                                             Query(BSON(ChunkFields::ns(ns)))
-                                                  .sort(BSON(ChunkFields::lastmod() << -1)));
+                    x = conn->get()->findOne(ChunkType::ConfigNS,
+                                             Query(BSON(ChunkType::ns(ns)))
+                                                  .sort(BSON(ChunkType::DEPRECATED_lastmod() << -1)));
 
-                    currChunk = conn->get()->findOne(ConfigNS::chunk,
-                                                     shardId.wrap(ChunkFields::name().c_str()));
+                    currChunk = conn->get()->findOne(ChunkType::ConfigNS,
+                                                     shardId.wrap(ChunkType::name().c_str()));
                 }
                 catch( DBException& e ){
                     errmsg = str::stream() << "aborted moveChunk because could not get chunk data from config server " << shardingState.getConfigServer() << causedBy( e );
@@ -1013,15 +1028,15 @@ namespace mongo {
                     return false;
                 }
 
-                maxVersion = ShardChunkVersion::fromBSON(x, ChunkFields::lastmod());
-                verify(currChunk[ChunkFields::shard()].type());
-                verify(currChunk[ChunkFields::min()].type());
-                verify(currChunk[ChunkFields::max()].type());
-                myOldShard = currChunk[ChunkFields::shard()].String();
+                maxVersion = ChunkVersion::fromBSON(x, ChunkType::DEPRECATED_lastmod());
+                verify(currChunk[ChunkType::shard()].type());
+                verify(currChunk[ChunkType::min()].type());
+                verify(currChunk[ChunkType::max()].type());
+                myOldShard = currChunk[ChunkType::shard()].String();
                 conn->done();
 
-                BSONObj currMin = currChunk[ChunkFields::min()].Obj();
-                BSONObj currMax = currChunk[ChunkFields::max()].Obj();
+                BSONObj currMin = currChunk[ChunkType::min()].Obj();
+                BSONObj currMax = currChunk[ChunkType::max()].Obj();
                 if ( currMin.woCompare( min ) || currMax.woCompare( max ) ) {
                     errmsg = "boundaries are outdated (likely a split occurred)";
                     result.append( "currMin" , currMin );
@@ -1186,7 +1201,7 @@ namespace mongo {
                 // 5.a
                 // we're under the collection lock here, so no other migrate can change maxVersion or ShardChunkManager state
                 migrateFromStatus.setInCriticalSection( true );
-                ShardChunkVersion myVersion = maxVersion;
+                ChunkVersion myVersion = maxVersion;
                 myVersion.incMajor();
 
                 {
@@ -1251,7 +1266,7 @@ namespace mongo {
                 // version at which the next highest lastmod will be set
                 // if the chunk being moved is the last in the shard, nextVersion is that chunk's lastmod
                 // otherwise the highest version is from the chunk being bumped on the FROM-shard
-                ShardChunkVersion nextVersion;
+                ChunkVersion nextVersion;
 
                 // we want to go only once to the configDB but perhaps change two chunks, the one being migrated and another
                 // local one (so to bump version for the entire shard)
@@ -1266,19 +1281,19 @@ namespace mongo {
                     BSONObjBuilder op;
                     op.append( "op" , "u" );
                     op.appendBool( "b" , false /* no upserting */ );
-                    op.append( "ns" , ConfigNS::chunk );
+                    op.append( "ns" , ChunkType::ConfigNS );
 
                     BSONObjBuilder n( op.subobjStart( "o" ) );
-                    n.append(ChunkFields::name(), Chunk::genID(ns, min));
-                    myVersion.addToBSON(n, ChunkFields::lastmod());
-                    n.append(ChunkFields::ns(), ns);
-                    n.append(ChunkFields::min(), min);
-                    n.append(ChunkFields::max(), max);
-                    n.append(ChunkFields::shard(), toShard.getName());
+                    n.append(ChunkType::name(), Chunk::genID(ns, min));
+                    myVersion.addToBSON(n, ChunkType::DEPRECATED_lastmod());
+                    n.append(ChunkType::ns(), ns);
+                    n.append(ChunkType::min(), min);
+                    n.append(ChunkType::max(), max);
+                    n.append(ChunkType::shard(), toShard.getName());
                     n.done();
 
                     BSONObjBuilder q( op.subobjStart( "o2" ) );
-                    q.append(ChunkFields::name(), Chunk::genID(ns, min));
+                    q.append(ChunkType::name(), Chunk::genID(ns, min));
                     q.done();
 
                     updates.append( op.obj() );
@@ -1305,20 +1320,20 @@ namespace mongo {
                     BSONObjBuilder op;
                     op.append( "op" , "u" );
                     op.appendBool( "b" , false );
-                    op.append( "ns" , ConfigNS::chunk );
+                    op.append( "ns" , ChunkType::ConfigNS );
 
                     nextVersion.incMinor();  // same as used on donateChunk
                     BSONObjBuilder n( op.subobjStart( "o" ) );
-                    n.append(ChunkFields::name(), Chunk::genID(ns, bumpMin));
-                    nextVersion.addToBSON(n, ChunkFields::lastmod());
-                    n.append(ChunkFields::ns(), ns);
-                    n.append(ChunkFields::min(), bumpMin);
-                    n.append(ChunkFields::max(), bumpMax);
-                    n.append(ChunkFields::shard(), fromShard.getName());
+                    n.append(ChunkType::name(), Chunk::genID(ns, bumpMin));
+                    nextVersion.addToBSON(n, ChunkType::DEPRECATED_lastmod());
+                    n.append(ChunkType::ns(), ns);
+                    n.append(ChunkType::min(), bumpMin);
+                    n.append(ChunkType::max(), bumpMax);
+                    n.append(ChunkType::shard(), fromShard.getName());
                     n.done();
 
                     BSONObjBuilder q( op.subobjStart( "o2" ) );
-                    q.append(ChunkFields::name(), Chunk::genID(ns, bumpMin));
+                    q.append(ChunkType::name(), Chunk::genID(ns, bumpMin));
                     q.done();
 
                     updates.append( op.obj() );
@@ -1337,13 +1352,13 @@ namespace mongo {
                 BSONArrayBuilder preCond( cmdBuilder.subarrayStart( "preCondition" ) );
                 {
                     BSONObjBuilder b;
-                    b.append("ns", ConfigNS::chunk);
-                    b.append("q", BSON("query" << BSON(ChunkFields::ns(ns)) <<
-                                       "orderby" << BSON(ChunkFields::lastmod() << -1)));
+                    b.append("ns", ChunkType::ConfigNS);
+                    b.append("q", BSON("query" << BSON(ChunkType::ns(ns)) <<
+                                       "orderby" << BSON(ChunkType::DEPRECATED_lastmod() << -1)));
                     {
                         BSONObjBuilder bb( b.subobjStart( "res" ) );
                         // TODO: For backwards compatibility, we can't yet require an epoch here
-                        bb.appendTimestamp(ChunkFields::lastmod(), maxVersion.toLong());
+                        bb.appendTimestamp(ChunkType::DEPRECATED_lastmod(), maxVersion.toLong());
                         bb.done();
                     }
                     preCond.append( b.obj() );
@@ -1392,12 +1407,12 @@ namespace mongo {
 
                         // look for the chunk in this shard whose version got bumped
                         // we assume that if that mod made it to the config, the applyOps was successful
-                        BSONObj doc = conn->get()->findOne(ConfigNS::chunk,
-                                                           Query(BSON(ChunkFields::ns(ns)))
-                                                               .sort(BSON(ChunkFields::lastmod() << -1)));
+                        BSONObj doc = conn->get()->findOne(ChunkType::ConfigNS,
+                                                           Query(BSON(ChunkType::ns(ns)))
+                                                               .sort(BSON(ChunkType::DEPRECATED_lastmod() << -1)));
 
-                        ShardChunkVersion checkVersion =
-                            ShardChunkVersion::fromBSON(doc[ChunkFields::lastmod()]);
+                        ChunkVersion checkVersion =
+                            ChunkVersion::fromBSON(doc[ChunkType::DEPRECATED_lastmod()]);
 
                         if ( checkVersion.isEquivalentTo( nextVersion ) ) {
                             log() << "moveChunk commit confirmed" << migrateLog;
@@ -1536,7 +1551,7 @@ namespace mongo {
                 // 0. copy system.namespaces entry if collection doesn't already exist
                 Client::WriteContext ctx( ns );
                 // Only copy if ns doesn't already exist
-                if ( ! nsdetails( ns.c_str() ) ) {
+                if ( ! nsdetails( ns ) ) {
                     string system_namespaces = NamespaceString( ns ).db + ".system.namespaces";
                     BSONObj entry = conn->findOne( system_namespaces, BSON( "name" << ns ) );
                     if ( entry["options"].isABSONObj() ) {
@@ -1799,8 +1814,7 @@ namespace mongo {
 
                     // id object most likely has form { _id : ObjectId(...) }
                     // infer from that correct index to use, e.g. { _id : 1 }
-                    BSONObj idIndexPattern;
-                    Helpers::toKeyFormat( id , idIndexPattern );
+                    BSONObj idIndexPattern = Helpers::inferKeyPattern( id );
 
                     // TODO: create a better interface to remove objects directly
                     Helpers::removeRange( ns ,
@@ -1933,7 +1947,6 @@ namespace mongo {
         Client::initThread( "migrateThread" );
         if (!noauth) {
             ShardedConnectionInfo::addHook();
-            cc().getAuthenticationInfo()->authorize("local", internalSecurity.user);
             cc().getAuthorizationManager()->grantInternalAuthorization("_migrateThread");
         }
         migrateStatus.go();
@@ -1983,9 +1996,8 @@ namespace mongo {
                 // shardKeyPattern may not be provided if another shard is from pre 2.2
                 // In that case, assume the shard key pattern is the same as the range
                 // specifiers provided.
-                BSONObj keya , keyb;
-                Helpers::toKeyFormat( migrateStatus.min , keya );
-                Helpers::toKeyFormat( migrateStatus.max , keyb );
+                BSONObj keya = Helpers::inferKeyPattern( migrateStatus.min );
+                BSONObj keyb = Helpers::inferKeyPattern( migrateStatus.max );
                 verify( keya == keyb );
 
                 warning() << "No shard key pattern provided by source shard for migration."

@@ -74,8 +74,8 @@ namespace mongo {
                 return -1;
 
             if ( !lexOnly ) {
-                bool n1 = isNumber( sd1[s1] );
-                bool n2 = isNumber( sd2[s2] );
+                bool n1 = isdigit( sd1[s1] );
+                bool n2 = isdigit( sd2[s2] );
 
                 if ( n1 && n2 ) {
                     // get rid of leading 0s
@@ -87,8 +87,8 @@ namespace mongo {
                     size_t e1 = s1;
                     size_t e2 = s2;
 
-                    while ( e1 < sd1.size() && isNumber( sd1[e1] ) ) e1++;
-                    while ( e2 < sd2.size() && isNumber( sd2[e2] ) ) e2++;
+                    while ( e1 < sd1.size() && isdigit( sd1[e1] ) ) e1++;
+                    while ( e2 < sd2.size() && isdigit( sd2[e2] ) ) e2++;
 
                     size_t len1 = e1-s1;
                     size_t len2 = e2-s2;
@@ -146,6 +146,20 @@ namespace mongo {
     }
     bool LexNumCmp::operator()( const StringData& s1, const StringData& s2 ) const {
         return cmp( s1, s2 ) < 0;
+    }
+
+    int versionCmp(const StringData rhs, const StringData lhs) {
+        if (rhs == lhs) return 0;
+
+        // handle "1.2.3-" and "1.2.3-pre"
+        if (rhs.size() < lhs.size()) {
+            if (strncmp(rhs.rawData(), lhs.rawData(), rhs.size()) == 0 && lhs[rhs.size()] == '-') return +1;
+        }
+        else if (rhs.size() > lhs.size()) {
+            if (strncmp(rhs.rawData(), lhs.rawData(), lhs.size()) == 0 && rhs[lhs.size()] == '-') return -1;
+        }
+
+        return LexNumCmp::cmp(rhs, lhs, false);
     }
 
 } // namespace mongo

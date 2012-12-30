@@ -32,6 +32,8 @@ _ disallow system* manipulations from the database.
 #include <list>
 
 #include "mongo/base/counter.h"
+#include "mongo/db/auth/auth_index_d.h"
+#include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/pdfile_private.h"
 #include "mongo/db/background.h"
 #include "mongo/db/btree.h"
@@ -164,6 +166,13 @@ namespace mongo {
         }
     }
 
+    static void _ensureSystemIndexes(const char* ns) {
+        NamespaceString nsstring(ns);
+        if (StringData(nsstring.coll).substr(0, 7) == "system.") {
+            authindex::createSystemIndexes(nsstring);
+        }
+    }
+
     string getDbContext() {
         stringstream ss;
         Client * c = currentClient.get();
@@ -222,8 +231,10 @@ namespace mongo {
     }
 
     void checkConfigNS(const char *ns) {
-        if ( cmdLine.configsvr && 
-             !( str::startsWith( ns, "config." ) || str::startsWith( ns, "admin." ) ) ) { 
+        if ( cmdLine.configsvr &&
+             !( str::startsWith( ns, "config." ) ||
+                str::startsWith( ns, "local." ) ||
+                str::startsWith( ns, "admin." ) ) ) {
             uasserted(14037, "can't create user databases on a --configsvr instance");
         }
     }
@@ -332,7 +343,9 @@ namespace mongo {
             else
                 ensureIdIndexForNewNs( ns );
         }
-        
+
+        _ensureSystemIndexes(ns);
+
         if ( mx > 0 )
             d->setMaxCappedDocs( mx );
 
@@ -557,7 +570,7 @@ namespace mongo {
 
     Extent* DataFileMgr::allocFromFreeList(const char *ns, int approxSize, bool capped, bool transactiontime) {
         string s = cc().database()->name + FREELIST_NS;
-        NamespaceDetails *f = nsdetails(s.c_str());
+        NamespaceDetails *f = nsdetails(s);
         if( f ) {
             int low, high;
             if( capped ) {
@@ -912,7 +925,7 @@ namespace mongo {
     void printFreeList() {
         string s = cc().database()->name + FREELIST_NS;
         log() << "dump freelist " << s << endl;
-        NamespaceDetails *freeExtents = nsdetails(s.c_str());
+        NamespaceDetails *freeExtents = nsdetails(s);
         if( freeExtents == 0 ) {
             log() << "  freeExtents==0" << endl;
             return;
@@ -942,11 +955,11 @@ namespace mongo {
         }
 
         string s = cc().database()->name + FREELIST_NS;
-        NamespaceDetails *freeExtents = nsdetails(s.c_str());
+        NamespaceDetails *freeExtents = nsdetails(s);
         if( freeExtents == 0 ) {
             string err;
             _userCreateNS(s.c_str(), BSONObj(), err, 0); // todo: this actually allocates an extent, which is bad!
-            freeExtents = nsdetails(s.c_str());
+            freeExtents = nsdetails(s);
             massert( 10361 , "can't create .$freelist", freeExtents);
         }
         if( freeExtents->firstExtent.isNull() ) {
@@ -966,7 +979,7 @@ namespace mongo {
 
     /* drop a collection/namespace */
     void dropNS(const string& nsToDrop) {
-        NamespaceDetails* d = nsdetails(nsToDrop.c_str());
+        NamespaceDetails* d = nsdetails(nsToDrop);
         uassert( 10086 ,  (string)"ns not found: " + nsToDrop , d );
 
         BackgroundOperation::assertNoBgOpInProgForNs(nsToDrop.c_str());
@@ -974,10 +987,14 @@ namespace mongo {
         NamespaceString s(nsToDrop);
         verify( s.db == cc().database()->name );
         if( s.isSystem() ) {
-            if( s.coll == "system.profile" )
-                uassert( 10087 ,  "turn off profiling before dropping system.profile collection", cc().database()->profile == 0 );
-            else
+            if( s.coll == "system.profile" ) {
+                uassert( 10087,
+                         "turn off profiling before dropping system.profile collection",
+                         cc().database()->getProfilingLevel() == 0 );
+            }
+            else {
                 uasserted( 12502, "can't drop system ns" );
+            }
         }
 
         {
@@ -1001,7 +1018,7 @@ namespace mongo {
 
     void dropCollection( const string &name, string &errmsg, BSONObjBuilder &result ) {
         LOG(1) << "dropCollection: " << name << endl;
-        NamespaceDetails *d = nsdetails(name.c_str());
+        NamespaceDetails *d = nsdetails(name);
         if( d == 0 )
             return;
 
@@ -1118,7 +1135,7 @@ namespace mongo {
     }
 
     Counter64 moveCounter;
-    ServerStatusMetricField<Counter64> moveCounterDisplay( "record.moves", false, &moveCounter );
+    ServerStatusMetricField<Counter64> moveCounterDisplay( "record.moves", &moveCounter );
 
     /** Note: if the object shrinks a lot, we don't free up space, we leave extra at end of the record.
      */
@@ -1147,6 +1164,11 @@ namespace mongo {
             b.append(e); // put _id first, for best performance
             b.appendElements(objNew);
             objNew = b.obj();
+        }
+
+        NamespaceString nsstring(ns);
+        if (nsstring.coll == "system.users") {
+            uassertStatusOK(AuthorizationManager::checkValidPrivilegeDocument(nsstring.db, objNew));
         }
 
         /* duplicate key check. we descend the btree twice - once for this check, and once for the actual inserts, further
@@ -1387,10 +1409,8 @@ namespace mongo {
             else if ( legalClientSystemNS( ns , true ) ) {
                 if ( obuf && strstr( ns , ".system.users" ) ) {
                     BSONObj t( reinterpret_cast<const char *>( obuf ) );
-                    uassert( 14051 , "system.users entry needs 'user' field to be a string" , t["user"].type() == String );
-                    uassert( 14052 , "system.users entry needs 'pwd' field to be a string" , t["pwd"].type() == String );
-                    uassert( 14053 , "system.users entry needs 'user' field to be non-empty" , t["user"].String().size() );
-                    uassert( 14054 , "system.users entry needs 'pwd' field to be non-empty" , t["pwd"].String().size() );
+                    uassertStatusOK(AuthorizationManager::checkValidPrivilegeDocument(
+                                            nsToDatabaseSubstring(ns), t));
                 }
             }
             else if ( !god ) {
@@ -1414,6 +1434,7 @@ namespace mongo {
         NamespaceDetails *d = nsdetails(ns);
         if ( !god )
             ensureIdIndexForNewNs(ns);
+        _ensureSystemIndexes(ns);
         addNewNamespaceToCatalog(ns);
         return d;
     }
@@ -1425,14 +1446,6 @@ namespace mongo {
         uassert( 13143 , "can't create index on system.indexes" , tabletoidxns.find( ".system.indexes" ) == string::npos );
 
         BSONObj info = loc.obj();
-        bool background = info["background"].trueValue();
-        if (background && !isMasterNs(tabletoidxns.c_str())) {
-            /* don't do background indexing on slaves.  there are nuances.  this could be added later
-                but requires more code.
-                */
-            log() << "info: indexing in foreground on this replica; was a background index build on the primary" << endl;
-            background = false;
-        }
 
         // The total number of indexes right before we write to the collection
         int oldNIndexes = -1;
@@ -1454,7 +1467,7 @@ namespace mongo {
 
             try {
                 getDur().writingInt(tableToIndex->indexBuildsInProgress) += 1;
-                buildAnIndex(tabletoidxns, tableToIndex, idx, background, mayInterrupt);
+                buildAnIndex(tabletoidxns, tableToIndex, idx, mayInterrupt);
             }
             catch (DBException& e) {
                 // save our error msg string as an exception or dropIndexes will overwrite our message
@@ -1481,7 +1494,7 @@ namespace mongo {
             }
 
             // Recompute index numbers
-            tableToIndex = nsdetails(tabletoidxns.c_str());
+            tableToIndex = nsdetails(tabletoidxns);
             idxNo = IndexBuildsInProgress::get(tabletoidxns.c_str(), idxName);
             verify(idxNo > -1);
 
