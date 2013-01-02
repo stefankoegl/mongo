@@ -352,7 +352,8 @@ namespace mongo {
         /* ensure unique (current) _id._id */
         if ( d->hasTransactionTime() )
         {
-            BSONObj indexInfo = BSON( "key" << BSON( "_id._id" << 1 << "transaction_end" << 1) <<
+            // the order is important if we want to shard on {transaction_end: 1, _id._id: 1}
+            BSONObj indexInfo = BSON( "key" << BSON("transaction_end" << 1 << "_id._id" << 1) <<
                                       "ns" << ns <<
                                       "name" << "current_id" <<
                                       "unique" << true);
