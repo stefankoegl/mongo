@@ -57,6 +57,10 @@ namespace mongo {
         bool chunkSkip;            // Did not belong to an owned chunk range.
     };
 
+    struct HistoricResultDetails {
+        BSONObj lastId;
+    };
+
     /** Interface for recording events that contribute to explain results. */
     class ExplainRecordingStrategy {
     public:
@@ -260,7 +264,7 @@ namespace mongo {
                                           const QueryPlanSummary &queryPlan,
                                           const BSONObj &oldPlan );
         /** @return true if the current iterate matches and is added. */
-        bool addMatch();
+        bool addMatch(HistoricResultDetails *historicResult);
         /** Note that a yield occurred. */
         void noteYield();
         /** @return true if there are enough results to return the first batch. */
@@ -294,6 +298,12 @@ namespace mongo {
          * @param resultDetails describes how the document was matched and loaded.
          */
         bool currentMatches( ResultDetails* resultDetails );
+
+        /**
+         *
+         */
+        bool historyMatches( HistoricResultDetails *historicResult );
+        void handleHistoryMatch( HistoricResultDetails *historicResult );
         /**
          * @return true if the cursor's document is in a valid chunk range.
          * @param resultDetails describes how the document was matched and loaded.
