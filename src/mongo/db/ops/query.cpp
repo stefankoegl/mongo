@@ -544,8 +544,6 @@ namespace mongo {
                 chunkMatches( &resultDetails ) &&
                 _builder->handleMatch( &resultDetails );
 
-        cout << _cursor->currLoc().toString() << endl;
-
         if( match )
             handleHistoryMatch( historicResult );
 
@@ -654,8 +652,6 @@ namespace mongo {
             BSONElement curId = obj.getFieldDotted("_id._id");
             BSONElement lastId = historicResult->lastId.getField("_id");
 
-            cout << curId.toString(false, false) << " == " << lastId.toString(false, false) << " - " << (!curId.eoo() && curId ==  lastId) << endl;
-
             if( !curId.eoo() && curId ==  lastId)
             {
                 return true;
@@ -676,7 +672,6 @@ namespace mongo {
         b.appendAs(idElement, "_id");
 
         BSONObj newId = b.obj();
-        cout << "new _id " << newId.toString(false, false) << endl;
         historicResult->lastId = newId;
     }
 
