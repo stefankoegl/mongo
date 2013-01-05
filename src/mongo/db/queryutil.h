@@ -90,6 +90,7 @@ namespace mongo {
         const BSONObj& getMax() const { return _max; }
         const BSONObj& getOrder() const { return _order; }
         const BSONObj& getHint() const { return _hint; }
+        void setHint(BSONObj hint) { _hint = hint; }
         void setOrder(BSONObj order) { _order = order; }
         int getMaxScan() const { return _maxScan; }
         int getIncludeHistory() const { return _nhistory; }

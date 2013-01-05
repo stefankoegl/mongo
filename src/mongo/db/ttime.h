@@ -11,6 +11,7 @@
 #define TTIME_H_
 
 #include "mongo/bson/bsonobj.h"
+#include "mongo/db/queryutil.h"
 
 namespace mongo {
 
@@ -29,6 +30,8 @@ namespace mongo {
     BSONObj getTTLQuery(const char* fieldName, long long expireField);
 
     BSONObj modifyTransactionTimeIndex(BSONObj key);
+
+    BSONObj getIncludeHistory(BSONObj query, ParsedQuery &pq);
 }
 
 #endif /* TTIME_H_ */

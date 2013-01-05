@@ -1049,8 +1049,8 @@ namespace mongo {
             query = addTemporalCriteria(query);
             order = addTemporalOrder(order);
             pq.setOrder(order);
-            //TODO: extract value somewhere
-            pq.setIncludeHistory(10);
+
+            query = getIncludeHistory(query, pq);
         }
 
         bool hasRetried = false;
