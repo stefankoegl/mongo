@@ -349,17 +349,25 @@ namespace mongo {
         if ( mx > 0 )
             d->setMaxCappedDocs( mx );
 
-        /* ensure unique (current) _id._id */
+        /* auto-created indices */
         if ( d->hasTransactionTime() )
         {
+            string index = nsToDatabase(ns).append(".system.indexes");
+
+            // ensure unique (current) _id._id
             // the order is important if we want to shard on {transaction_end: 1, _id._id: 1}
-            BSONObj indexInfo = BSON( "key" << BSON("transaction_end" << 1 << "_id._id" << 1) <<
+            BSONObj uniqueCurrentId = BSON( "key" << BSON("transaction_end" << 1 << "_id._id" << 1) <<
                                       "ns" << ns <<
                                       "name" << "current_id" <<
                                       "unique" << true);
+            theDataFileMgr.insertWithObjMod(index.c_str(), uniqueCurrentId, false);
 
-            string index = nsToDatabase(ns).append(".system.indexes");
-            theDataFileMgr.insertWithObjMod(index.c_str(), indexInfo, false);
+            // index used when including historic results
+            BSONObj historyResultsIndex = BSON( "key" << BSON("_id._id" << 1 << "transaction_start" << -1 << "transaction" << 0) <<
+                                      "ns" << ns <<
+                                      "name" << "history_results_idx");
+            theDataFileMgr.insertWithObjMod(index.c_str(), historyResultsIndex, false);
+
         }
 
         bool isFreeList = strstr(ns, FREELIST_NS) != 0;

@@ -306,5 +306,38 @@ namespace mongo {
             return idx.replaceField("key", key);
         }
     }
+
+    /* checks for a $history parameter and sets some settings accordingly */
+    BSONObj getIncludeHistory(BSONObj query, ParsedQuery &pq)
+    {
+        BSONElement historyElem = query.getField("$history");
+
+        // no $history -- nothing to do
+        if(historyElem.eoo())
+        {
+            return query;
+        }
+
+        uassert(999424, "$history must contain a number", historyElem.isNumber());
+        int numHistory = historyElem.numberInt();
+
+        uassert(999425, "$history value must be non-negative", numHistory >= 0);
+        pq.setIncludeHistory(numHistory);
+
+        query = query.removeField("$history");
+
+        // history functionality disabled -- don't set $hint
+        if(numHistory == 0)
+        {
+            return query;
+        }
+
+        /* we have to use an index that starts with {_id._id: +/- 1, transaction_start: -1, ...} */
+        BSONObjBuilder b;
+        b.append(StringData("$hint"), StringData("history_results_idx"));
+        pq.setHint(b.obj());
+
+        return query;
+    }
 }
 

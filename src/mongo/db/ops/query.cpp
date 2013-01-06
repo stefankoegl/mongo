@@ -529,7 +529,7 @@ namespace mongo {
         _builder->resetBuf();
     }
 
-    bool QueryResponseBuilder::addMatch() {
+    bool QueryResponseBuilder::addMatch(HistoricResultDetails *historicResult) {
         ResultDetails resultDetails;
 
         if ( _parsedQuery.getFields() && _parsedQuery.getFields()->getArrayOpType() == Projection::ARRAY_OP_POSITIONAL ) {
@@ -537,10 +537,16 @@ namespace mongo {
             resultDetails.matchDetails.requestElemMatchKey();
         }
 
-        bool match =
-                currentMatches( &resultDetails ) &&
+        bool match = (
+                    historyMatches( historicResult ) ||
+                    currentMatches( &resultDetails )
+                    ) &&
                 chunkMatches( &resultDetails ) &&
                 _builder->handleMatch( &resultDetails );
+
+        if( match )
+            handleHistoryMatch( historicResult );
+
 
         _explain->noteIterate( resultDetails );
         return match;
@@ -638,6 +644,39 @@ namespace mongo {
         ( HybridBuildStrategy::make( _parsedQuery, _queryOptimizerCursor, _buf ) );
     }
 
+    bool QueryResponseBuilder::historyMatches( HistoricResultDetails *historicResult ) {
+        BSONObj obj = _cursor->currLoc().obj();
+
+        if( !historicResult->lastId.isEmpty() )
+        {
+            BSONElement curId = obj.getFieldDotted("_id._id");
+            BSONElement lastId = historicResult->lastId.getField("_id");
+
+            if( !curId.eoo() && curId ==  lastId && (historicResult->remainingResults > 0))
+            {
+                historicResult->remainingResults--;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void QueryResponseBuilder::handleHistoryMatch( HistoricResultDetails *historicResult )
+    {
+        BSONObj obj = _cursor->currLoc().obj();
+        BSONElement idElement = obj.getFieldDotted("_id._id");
+        if( idElement.eoo())
+            return;
+
+        BSONObjBuilder b;
+        b.appendAs(idElement, "_id");
+
+        BSONObj newId = b.obj();
+        historicResult->lastId = newId;
+        historicResult->remainingResults = _parsedQuery.getIncludeHistory();
+    }
+
     bool QueryResponseBuilder::currentMatches( ResultDetails* resultDetails ) {
         bool matches = _cursor->currentMatches( &resultDetails->matchDetails );
         if ( resultDetails->matchDetails.hasLoadedRecord() ) {
@@ -699,6 +738,8 @@ namespace mongo {
         ClientCursor::Holder ccPointer( new ClientCursor( QueryOption_NoCursorTimeout, cursor,
                                                          ns ) );
         
+        HistoricResultDetails historicResult;
+
         for( ; cursor->ok(); cursor->advance() ) {
 
             bool yielded = false;
@@ -725,7 +766,7 @@ namespace mongo {
                 break;
             }
             
-            if ( !queryResponseBuilder->addMatch() ) {
+            if ( !queryResponseBuilder->addMatch(&historicResult) ) {
                 continue;
             }
             
@@ -1005,6 +1046,8 @@ namespace mongo {
             query = addTemporalCriteria(query);
             order = addTemporalOrder(order);
             pq.setOrder(order);
+
+            query = getIncludeHistory(query, pq);
         }
 
         bool hasRetried = false;
