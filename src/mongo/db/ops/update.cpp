@@ -21,6 +21,7 @@
 #include "mongo/db/oplog.h"
 #include "mongo/db/pagefault.h"
 #include "mongo/db/queryutil.h"
+#include "mongo/db/ttime.h"
 #include "mongo/client/dbclientinterface.h"
 
 #include "update.h"
@@ -129,7 +130,7 @@ namespace mongo {
     UpdateResult _updateObjects( bool su,
                                  const char* ns,
                                  const BSONObj& updateobj,
-                                 const BSONObj& patternOrig,
+                                 BSONObj patternOrig,
                                  bool upsert,
                                  bool multi,
                                  bool logop ,
@@ -155,6 +156,11 @@ namespace mongo {
         NamespaceDetails* d = nsdetails(ns); // can be null if an upsert...
         NamespaceDetailsTransient* nsdt = &NamespaceDetailsTransient::get(ns);
 
+        if( d && d->hasTransactionTime() ) {
+            /* make sure that we only allow modification of current documents */
+            patternOrig = addCurrentVersionCriterion(patternOrig);
+        }
+
         auto_ptr<ModSet> mods;
         bool isOperatorUpdate = updateobj.firstElementFieldName()[0] == '$';
         int modsIsIndexed = false; // really the # of indexes
@@ -173,7 +179,7 @@ namespace mongo {
         }
 
         if( planPolicy.permitOptimalIdPlan() && !multi && isSimpleIdQuery(patternOrig) && d &&
-           !modsIsIndexed ) {
+           !modsIsIndexed && !d->hasTransactionTime() ) {
             int idxNo = d->findIdIndex();
             if( idxNo >= 0 ) {
                 debug.idhack = true;
@@ -355,7 +361,7 @@ namespace mongo {
                     // order to ensure that they are validated inside DataFileMgr::updateRecord(.).
                     bool isSystemUsersMod = (NamespaceString(ns).coll == "system.users");
 
-                    if ( modsIsIndexed <= 0 && mss->canApplyInPlace() && !isSystemUsersMod ) {
+                    if ( modsIsIndexed <= 0 && mss->canApplyInPlace() && !d->hasTransactionTime() && !isSystemUsersMod ) {
                         mss->applyModsInPlace( true );// const_cast<BSONObj&>(onDisk) );
 
                         DEBUGUPDATE( "\t\t\t doing in place update" );
@@ -368,12 +374,51 @@ namespace mongo {
 
                         d->paddingFits();
                     }
+                    else if ( d->hasTransactionTime() )
+                    {
+                        massert( 99999, "Can't modify transaction_start field", !useMods->haveModForField("_id.transaction_start"));
+                        massert( 99998, "Can't modify transaction_end field", !useMods->haveModForField("transaction_end"));
+
+                        if ( rs )
+                            rs->goingToDelete( onDisk );
+
+                        BSONObj newObj = mss->createNewFromMods();
+
+                        BSONObj existingObj = setTransactionEndTimestamp(onDisk);
+
+                        checkTooLarge(existingObj);
+                        verify(nsdt);
+
+                        DiskLoc newLoc = theDataFileMgr.updateRecord(ns,
+                                                                     d,
+                                                                     nsdt,
+                                                                     r,
+                                                                     loc,
+                                                                     existingObj.objdata(),
+                                                                     existingObj.objsize(),
+                                                                     debug);
+
+
+                        newObj = setTransactionStartTimestamp(newObj, existingObj);
+
+                        checkTooLarge(newObj);
+                        verify(nsdt);
+                        theDataFileMgr.insert(ns, newObj.objdata(), newObj.objsize());
+
+                        if ( newLoc != loc || modsIsIndexed ){
+                            // log() << "Moved obj " << newLoc.obj()["_id"] << " from " << loc << " to " << newLoc << endl;
+                            // object moved, need to make sure we don' get again
+                            seenObjects.insert( newLoc );
+                        }
+                    }
                     else {
                         if ( rs )
                             rs->goingToDelete( onDisk );
 
                         BSONObj newObj = mss->createNewFromMods();
+
                         checkTooLarge(newObj);
+
                         DiskLoc newLoc = theDataFileMgr.updateRecord(ns,
                                                                      d,
                                                                      nsdt,
@@ -418,12 +463,53 @@ namespace mongo {
 
                 uassert( 10158 ,  "multi update only works with $ operators" , ! multi );
 
-                BSONElementManipulator::lookForTimestamps( updateobj );
-                checkNoMods( updateobj );
-                theDataFileMgr.updateRecord(ns, d, nsdt, r, loc , updateobj.objdata(), updateobj.objsize(), debug, su);
-                if ( logop ) {
-                    DEV wassert( !su ); // super used doesn't get logged, this would be bad.
-                    logOp("u", ns, updateobj, &pattern, 0, fromMigrate );
+                if( d->hasTransactionTime() )
+                {
+                    massert( 99997, "Update can't contain transaction_start field", updateobj.getFieldDotted("_id.transaction_start").eoo());
+                    massert( 99996, "Update can't contain transaction_end field", !updateobj.hasField("transaction_end"));
+
+                    Record* r = c->_current();
+                    BSONObj onDisk = BSONObj::make(r);
+
+                    /* update transaction_end timestamp in existing document */
+                    BSONObj existingObj = setTransactionEndTimestamp(onDisk);
+
+                    checkTooLarge(existingObj);
+                    verify(nsdt);
+
+                    BSONObj newObj = setTransactionStartTimestamp(updateobj, existingObj);
+
+                    /* update existing version */
+                    theDataFileMgr.updateRecord(ns,
+                                                 d,
+                                                 nsdt,
+                                                 r,
+                                                 loc,
+                                                 existingObj.objdata(),
+                                                 existingObj.objsize(),
+                                                 debug);
+
+
+                    /* insert new object */
+                    BSONElementManipulator::lookForTimestamps( newObj );
+
+                    checkNoMods( newObj );
+                    theDataFileMgr.insert(ns, newObj.objdata(), newObj.objsize(), su);
+
+                    if ( logop ) {
+                        DEV wassert( !su ); // super used doesn't get logged, this would be bad.
+                        logOp("u", ns, newObj, &pattern, 0, fromMigrate );
+                    }
+                }
+                else
+                {
+                    BSONElementManipulator::lookForTimestamps( updateobj );
+                    checkNoMods( updateobj );
+                    theDataFileMgr.updateRecord(ns, d, nsdt, r, loc , updateobj.objdata(), updateobj.objsize(), debug, su);
+                    if ( logop ) {
+                        DEV wassert( !su ); // super used doesn't get logged, this would be bad.
+                        logOp("u", ns, updateobj, &pattern, 0, fromMigrate );
+                    }
                 }
                 return UpdateResult( 1 , 0 , 1 , BSONObj() );
             } while ( c->ok() );

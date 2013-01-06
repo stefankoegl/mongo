@@ -1012,6 +1012,52 @@ dodouble:
         return b.obj();
     }
 
+
+    inline BSONObj BSONObj::replaceField(const StringData& name, const BSONObj& obj) const {
+        BSONObjBuilder b;
+        BSONObjIterator i(*this);
+        while ( i.more() ) {
+            BSONElement e = i.next();
+            const char *fname = e.fieldName();
+            if( strcmp(name.rawData(), fname) )
+                b.append(e);
+            else
+            	b.append(name, obj);
+        }
+        return b.obj();
+    }
+
+    inline BSONObj BSONObj::renameField(const StringData& name, const StringData& newName) const {
+        BSONObjBuilder b;
+        BSONObjIterator i(*this);
+        while ( i.more() ) {
+            BSONElement e = i.next();
+            const char *fname = e.fieldName();
+            if( !strcmp(name.rawData(), fname) )
+                b.appendAs(e, newName);
+            else
+                b.append(e);
+        }
+        return b.obj();
+    }
+
+    inline BSONObj BSONObj::replaceTimestamp(const StringData& name) const {
+        BSONObjBuilder b;
+        BSONObjIterator i(*this);
+        while ( i.more() ) {
+            BSONElement e = i.next();
+            const char *fname = e.fieldName();
+            if( strcmp(name.rawData(), fname) )
+                b.append(e);
+            else
+            {
+            	b.appendTimestamp(name);
+            }
+        }
+        return b.obj();
+    }
+
+
     template<typename T> bool BSONObj::coerceVector( std::vector<T>* out ) const {
         BSONObjIterator i( *this );
         while ( i.more() ) {

@@ -317,6 +317,18 @@ namespace mongo {
                 return BSONObj::opOPTIONS;
             else if ( fn[1] == 'w' && fn[2] == 'i' && fn[3] == 't' && fn[4] == 'h' && fn[5] == 'i' && fn[6] == 'n' && fn[7] == 0 )
                 return BSONObj::opWITHIN;
+
+            else if ( fn[0] == '$' && fn[3] == 't' ) {
+                if ( fn[2] == 'g' ) {
+                    if ( fn[4] == 0 ) return BSONObj::TGT;
+                    else if ( fn[4] == 'e' && fn[5] == 0 ) return BSONObj::TGTE;
+                }
+                else if ( fn[2] == 'l' ) {
+                    if ( fn[4] == 0 ) return BSONObj::TLT;
+                    else if ( fn[4] == 'e' && fn[5] == 0 ) return BSONObj::TLTE;
+                }
+            }
+
             else if (mongoutils::str::equals(fn + 1, "geoIntersects"))
                 return BSONObj::opGEO_INTERSECTS;
         }
@@ -1125,6 +1137,10 @@ namespace mongo {
     Labeler::Label GTE( "$gte" );
     Labeler::Label LT( "$lt" );
     Labeler::Label LTE( "$lte" );
+    Labeler::Label TGT( "$tgt" );
+    Labeler::Label TGTE( "$tgte" );
+    Labeler::Label TLT( "$tlt" );
+    Labeler::Label TLTE( "$tlte" );
     Labeler::Label NE( "$ne" );
     Labeler::Label NIN( "$nin" );
     Labeler::Label BSIZE( "$size" );

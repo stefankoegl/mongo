@@ -22,6 +22,7 @@
 #include "../clientcursor.h"
 #include "../namespace.h"
 #include "../queryutil.h"
+#include "../ttime.h"
 #include "mongo/client/dbclientinterface.h"
 #include "mongo/util/elapsed_tracker.h"
 
@@ -62,7 +63,12 @@ namespace mongo {
             return -1;
         }
         BSONObj query = cmd.getObjectField("query");
-        
+
+        if( d && d->hasTransactionTime() )
+        {
+            query = addTemporalCriteria(query);
+        }
+
         // count of all objects
         if ( query.isEmpty() ) {
             return applySkipLimit( d->stats.nrecords , cmd );

@@ -647,7 +647,7 @@ namespace mongo {
 
            returns true if successful.
         */
-        bool createCollection(const string &ns, long long size = 0, bool capped = false, int max = 0, BSONObj *info = 0);
+        bool createCollection(const string &ns, long long size = 0, bool capped = false, int max = 0, BSONObj *info = 0, bool transactionTime = false);
 
         /** Get error result from the last write operation (insert/update/delete) on this connection.
             db doesn't change the command's behavior - it is just for auth checks.

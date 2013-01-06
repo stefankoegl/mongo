@@ -51,6 +51,7 @@ _ disallow system* manipulations from the database.
 #include "mongo/db/ops/delete.h"
 #include "mongo/db/repl.h"
 #include "mongo/db/replutil.h"
+#include "mongo/db/ttime.h"
 #include "mongo/db/sort_phase_one.h"
 #include "mongo/util/file.h"
 #include "mongo/util/file_allocator.h"
@@ -275,6 +276,11 @@ namespace mongo {
             }
         }
 
+        bool newTransactionTime = false;
+        if( options["transactiontime"].trueValue() ) {
+            newTransactionTime = true;
+        }
+
         // $nExtents just for debug/testing.
         BSONElement e = options.getField( "$nExtents" );
         Database *database = cc().database();
@@ -313,7 +319,7 @@ namespace mongo {
                 desiredExtentSize = static_cast<int> (desiredExtentSize < min ? min : desiredExtentSize);
 
                 desiredExtentSize &= 0xffffff00;
-                Extent *e = database->allocExtent( ns, desiredExtentSize, newCapped, true );
+                Extent *e = database->allocExtent( ns, desiredExtentSize, newCapped, newTransactionTime, true );
                 size -= e->length;
             }
         }
@@ -342,6 +348,27 @@ namespace mongo {
 
         if ( mx > 0 )
             d->setMaxCappedDocs( mx );
+
+        /* auto-created indices */
+        if ( d->hasTransactionTime() )
+        {
+            string index = nsToDatabase(ns).append(".system.indexes");
+
+            // ensure unique (current) _id._id
+            // the order is important if we want to shard on {transaction_end: 1, _id._id: 1}
+            BSONObj uniqueCurrentId = BSON( "key" << BSON("transaction_end" << 1 << "_id._id" << 1) <<
+                                      "ns" << ns <<
+                                      "name" << "current_id" <<
+                                      "unique" << true);
+            theDataFileMgr.insertWithObjMod(index.c_str(), uniqueCurrentId, false);
+
+            // index used when including historic results
+            BSONObj historyResultsIndex = BSON( "key" << BSON("_id._id" << 1 << "transaction_start" << -1 << "transaction" << 0) <<
+                                      "ns" << ns <<
+                                      "name" << "history_results_idx");
+            theDataFileMgr.insertWithObjMod(index.c_str(), historyResultsIndex, false);
+
+        }
 
         bool isFreeList = strstr(ns, FREELIST_NS) != 0;
         if( !isFreeList )
@@ -487,7 +514,7 @@ namespace mongo {
         mmf.flush( sync );
     }
 
-    void addNewExtentToNamespace(const char *ns, Extent *e, DiskLoc eloc, DiskLoc emptyLoc, bool capped) {
+    void addNewExtentToNamespace(const char *ns, Extent *e, DiskLoc eloc, DiskLoc emptyLoc, bool capped, bool transactiontime) {
         NamespaceIndex *ni = nsindex(ns);
         NamespaceDetails *details = ni->details(ns);
         if ( details ) {
@@ -499,7 +526,7 @@ namespace mongo {
             getDur().writingDiskLoc(details->lastExtent) = eloc;
         }
         else {
-            ni->add_ns(ns, eloc, capped);
+            ni->add_ns(ns, eloc, capped, transactiontime);
             details = ni->details(ns);
         }
 
@@ -510,7 +537,7 @@ namespace mongo {
         details->addDeletedRec(emptyLoc.drec(), emptyLoc);
     }
 
-    Extent* MongoDataFile::createExtent(const char *ns, int approxSize, bool newCapped, int loops) {
+    Extent* MongoDataFile::createExtent(const char *ns, int approxSize, bool newCapped, bool newTransactionTime, int loops) {
         verify( approxSize <= Extent::maxSize() );
         {
             // make sizes align with VM page size
@@ -532,7 +559,7 @@ namespace mongo {
                 out() << "warning: loops=" << loops << " fileno:" << fileNo << ' ' << ns << '\n';
             }
             log() << "newExtent: " << ns << " file " << fileNo << " full, adding a new file" << endl;
-            return cc().database()->addAFile( 0, true )->createExtent(ns, approxSize, newCapped, loops+1);
+            return cc().database()->addAFile( 0, true )->createExtent(ns, approxSize, newCapped, newTransactionTime, loops+1);
         }
         int offset = header()->unused.getOfs();
 
@@ -543,14 +570,14 @@ namespace mongo {
         Extent *e = _getExtent(loc);
         DiskLoc emptyLoc = getDur().writing(e)->init(ns, ExtentSize, fileNo, offset, newCapped);
 
-        addNewExtentToNamespace(ns, e, loc, emptyLoc, newCapped);
+        addNewExtentToNamespace(ns, e, loc, emptyLoc, newCapped, newTransactionTime);
 
         DEV tlog(1) << "new extent " << ns << " size: 0x" << hex << ExtentSize << " loc: 0x" << hex << offset
                     << " emptyLoc:" << hex << emptyLoc.getOfs() << dec << endl;
         return e;
     }
 
-    Extent* DataFileMgr::allocFromFreeList(const char *ns, int approxSize, bool capped) {
+    Extent* DataFileMgr::allocFromFreeList(const char *ns, int approxSize, bool capped, bool transactiontime) {
         string s = cc().database()->name + FREELIST_NS;
         NamespaceDetails *f = nsdetails(s);
         if( f ) {
@@ -630,7 +657,7 @@ namespace mongo {
                 // use it
                 OCCASIONALLY if( n > 512 ) log() << "warning: newExtent " << n << " scanned" << endl;
                 DiskLoc emptyLoc = e->reuse(ns, capped);
-                addNewExtentToNamespace(ns, e, e->myLoc, emptyLoc, capped);
+                addNewExtentToNamespace(ns, e, e->myLoc, emptyLoc, capped, transactiontime);
                 return e;
             }
         }
@@ -1355,13 +1382,13 @@ namespace mongo {
         DiskLoc loc;
         if ( ! d->isCapped() ) { // size capped doesn't grow
             LOG(1) << "allocating new extent for " << ns << " padding:" << d->paddingFactor() << " lenWHdr: " << lenWHdr << endl;
-            cc().database()->allocExtent(ns, Extent::followupSize(lenWHdr, d->lastExtentSize), false, !god);
+            cc().database()->allocExtent(ns, Extent::followupSize(lenWHdr, d->lastExtentSize), false, false, !god);
             loc = d->alloc(ns, lenWHdr);
             if ( loc.isNull() ) {
                 log() << "warning: alloc() failed after allocating new extent. lenWHdr: " << lenWHdr << " last extent size:" << d->lastExtentSize << "; trying again" << endl;
                 for ( int z=0; z<10 && lenWHdr > d->lastExtentSize; z++ ) {
                     log() << "try #" << z << endl;
-                    cc().database()->allocExtent(ns, Extent::followupSize(lenWHdr, d->lastExtentSize), false, !god);
+                    cc().database()->allocExtent(ns, Extent::followupSize(lenWHdr, d->lastExtentSize), false, false, !god);
                     loc = d->alloc(ns, lenWHdr);
                     if ( ! loc.isNull() )
                         break;
@@ -1412,7 +1439,7 @@ namespace mongo {
             // for user collections.  TODO: we could look at the # of records in the parent collection to be smarter here.
             ies = (32+4) * 1024;
         }
-        cc().database()->allocExtent(ns, ies, false, false);
+        cc().database()->allocExtent(ns, ies, false, false, false);
         NamespaceDetails *d = nsdetails(ns);
         if ( !god )
             ensureIdIndexForNewNs(ns);
@@ -1607,6 +1634,7 @@ namespace mongo {
         }
 
         int addID = 0; // 0 if not adding _id; if adding, the length of that new element
+        BSONObj ttObj;
         if( !god ) {
             /* Check if we have an _id field. If we don't, we'll add it.
                Note that btree buckets which we insert aren't BSONObj's, but in that case god==true.
@@ -1618,7 +1646,8 @@ namespace mongo {
             if( idField.eoo() &&
                 !wouldAddIndex &&
                 nsToDatabase( ns ) != "local" &&
-                d->haveIdIndex() ) {
+                d->haveIdIndex() &&
+                !d->hasTransactionTime() ) {
 
                 if( addedID )
                     *addedID = true;
@@ -1628,6 +1657,14 @@ namespace mongo {
             }
 
             BSONElementManipulator::lookForTimestamps( io );
+
+            if( d->hasTransactionTime() )
+            {
+                ttObj = BSONObj((const char *) obuf);
+                ttObj = wrapObjectId(ttObj);
+                obuf = ttObj.objdata();
+                len = ttObj.objsize();
+            }
         }
 
         int lenWHdr = d->getRecordAllocationSize( len + Record::HeaderSize );

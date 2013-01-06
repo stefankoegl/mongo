@@ -20,6 +20,8 @@
 #include "delete.h"
 #include "../queryutil.h"
 #include "../oplog.h"
+#include "db/ttime.h"
+#include "db/ops/update.h"
 #include "mongo/client/dbclientinterface.h"
 #include "mongo/util/stacktrace.h"
 
@@ -30,7 +32,7 @@ namespace mongo {
        justOne: stop after 1 match
        god:     allow access to system namespaces, and don't yield
     */
-    long long deleteObjects(const char *ns, BSONObj pattern, bool justOne, bool logop, bool god, RemoveSaver * rs ) {
+    long long deleteObjects(const char *ns, BSONObj pattern, bool justOne, bool logop, bool god, RemoveSaver * rs, bool purge ) {
         if( !god ) {
             if ( strstr(ns, ".system.") ) {
                 /* note a delete from system.indexes would corrupt the db
@@ -45,11 +47,16 @@ namespace mongo {
             }
         }
 
+        NamespaceDetails *d = nsdetails( ns );
+        if ( ! d )
+            return 0;
+        uassert( 10101 ,  "can't remove from a capped collection" , ! d->isCapped() );
+
+        uassert( 99199,   "can't use purge with non-temporal collection", !purge || d->hasTransactionTime() );
+
+        if( d->hasTransactionTime() && !purge )
         {
-            NamespaceDetails *d = nsdetails( ns );
-            if ( ! d )
-                return 0;
-            uassert( 10101 ,  "can't remove from a capped collection" , ! d->isCapped() );
+            pattern = addCurrentVersionCriterion(pattern);
         }
 
         long long nDeleted = 0;
@@ -132,7 +139,21 @@ namespace mongo {
             if ( rs )
                 rs->goingToDelete( rloc.obj() /*cc->c->current()*/ );
 
-            theDataFileMgr.deleteRecord(ns, rloc.rec(), rloc);
+            if( d->hasTransactionTime() && !purge )
+            {
+                BSONObj onDisk = BSONObj::make(rloc.rec());
+
+                onDisk = setTransactionEndTimestamp(onDisk);
+
+                NamespaceDetailsTransient* nsdt = &NamespaceDetailsTransient::get(ns);
+
+                OpDebug debug;
+                theDataFileMgr.updateRecord(ns, d, nsdt, rloc.rec(), rloc, onDisk.objdata(), onDisk.objsize(), debug, false);
+            }
+            else
+            {
+                theDataFileMgr.deleteRecord(ns, rloc.rec(), rloc);
+            }
             nDeleted++;
             if ( foundAllResults ) {
                 break;

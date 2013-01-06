@@ -552,7 +552,7 @@ namespace mongo {
         return ok;
     }
 
-    bool DBClientWithCommands::createCollection(const string &ns, long long size, bool capped, int max, BSONObj *info) {
+    bool DBClientWithCommands::createCollection(const string &ns, long long size, bool capped, int max, BSONObj *info, bool transactionTime) {
         verify(!capped||size);
         BSONObj o;
         if ( info == 0 )    info = &o;
@@ -561,6 +561,7 @@ namespace mongo {
         b.append("create", ns.c_str() + db.length() + 1);
         if ( size ) b.append("size", size);
         if ( capped ) b.append("capped", true);
+        if ( transactionTime ) b.append("transactiontime", true);
         if ( max ) b.append("max", max);
         return runCommand(db.c_str(), b.done(), *info);
     }

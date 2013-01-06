@@ -353,13 +353,13 @@ namespace mongo {
     }
 
 
-    Extent* Database::allocExtent( const char *ns, int size, bool capped, bool enforceQuota ) {
+    Extent* Database::allocExtent( const char *ns, int size, bool capped, bool transactiontime, bool enforceQuota ) {
         // todo: when profiling, these may be worth logging into profile collection
         bool fromFreeList = true;
-        Extent *e = DataFileMgr::allocFromFreeList( ns, size, capped );
+        Extent *e = DataFileMgr::allocFromFreeList( ns, size, capped, transactiontime );
         if( e == 0 ) {
             fromFreeList = false;
-            e = suitableFile( ns, size, !capped, enforceQuota )->createExtent( ns, size, capped );
+            e = suitableFile( ns, size, !capped, enforceQuota )->createExtent( ns, size, capped, transactiontime );
         }
         LOG(1) << "allocExtent " << ns << " size " << size << ' ' << fromFreeList << endl; 
         return e;
@@ -436,6 +436,10 @@ namespace mongo {
             }
             massert(15927, "can't open database in a read lock. if db was just closed, consider retrying the query. might otherwise indicate an internal error", !cant);
         }
+
+        // we mark our thread as having done writes now as we do not want any exceptions
+        // once we start creating a new database
+        cc().writeHappened();
 
         // this locks _m for defensive checks, so we don't want to be locked right here : 
         Database *db = new Database( dbname.c_str() , justCreated , path );

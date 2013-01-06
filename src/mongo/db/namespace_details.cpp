@@ -47,13 +47,14 @@ namespace mongo {
         0x200000, 0x400000, 0x1000000,
      };
 
-    NamespaceDetails::NamespaceDetails( const DiskLoc &loc, bool capped ) {
+    NamespaceDetails::NamespaceDetails( const DiskLoc &loc, bool capped, bool transactiontime ) {
         /* be sure to initialize new fields here -- doesn't default to zeroes the way we use it */
         firstExtent = lastExtent = capExtent = loc;
         stats.datasize = stats.nrecords = 0;
         lastExtentSize = 0;
         nIndexes = 0;
         _isCapped = capped;
+        _hasTransactionTime = transactiontime;
         _maxDocsInCapped = 0x7fffffff; // no limit (value is for pre-v2.3.2 compatability)
         _paddingFactor = 1.0;
         _systemFlags = 0;
@@ -472,8 +473,8 @@ namespace mongo {
         }
     }
 
-    void NamespaceIndex::add_ns(const char *ns, DiskLoc& loc, bool capped) {
-        NamespaceDetails details( loc, capped );
+    void NamespaceIndex::add_ns(const char *ns, DiskLoc& loc, bool capped, bool transactiontime) {
+        NamespaceDetails details( loc, capped, transactiontime );
         add_ns( ns, details );
     }
     void NamespaceIndex::add_ns( const char *ns, const NamespaceDetails &details ) {

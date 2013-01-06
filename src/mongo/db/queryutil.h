@@ -90,7 +90,11 @@ namespace mongo {
         const BSONObj& getMax() const { return _max; }
         const BSONObj& getOrder() const { return _order; }
         const BSONObj& getHint() const { return _hint; }
+        void setHint(BSONObj hint) { _hint = hint; }
+        void setOrder(BSONObj order) { _order = order; }
         int getMaxScan() const { return _maxScan; }
+        int getIncludeHistory() const { return _nhistory; }
+        void setIncludeHistory(int nhistory) { _nhistory = nhistory; }
         
         bool couldBeCommand() const {
             /* we assume you are using findOne() for running a cmd... */
@@ -228,6 +232,7 @@ namespace mongo {
         
         const char * const _ns;
         const int _ntoskip;
+        int _nhistory;
         int _ntoreturn;
         BSONObj _filter;
         BSONObj _order;

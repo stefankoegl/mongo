@@ -309,6 +309,11 @@ namespace mongo {
                 case BSONObj::LTE:
                 case BSONObj::GT:
                 case BSONObj::GTE:
+                //TODO: check
+                case BSONObj::TLT:
+                case BSONObj::TLTE:
+                case BSONObj::TGT:
+                case BSONObj::TGTE:
                     // ... then this FieldRange exactly characterizes those documents that match the
                     // operator.
                     _exactMatchRepresentation = true;
@@ -343,6 +348,18 @@ namespace mongo {
             case BSONObj::GTE:
                 op = BSONObj::LT;
                 break;
+            case BSONObj::TLT:
+                op = BSONObj::TGTE;
+                break;
+            case BSONObj::TLTE:
+                op = BSONObj::TGT;
+                break;
+            case BSONObj::TGT:
+                op = BSONObj::TLTE;
+                break;
+            case BSONObj::TGTE:
+                op = BSONObj::TLT;
+                break;
             case BSONObj::opEXISTS:
                 existsSpec = !existsSpec;
                 break;
@@ -368,13 +385,17 @@ namespace mongo {
             break;
         }
         case BSONObj::LT:
+        case BSONObj::TLT:
             upperInclusive = false;
         case BSONObj::LTE:
+        case BSONObj::TLTE:
             upper = e;
             break;
         case BSONObj::GT:
+        case BSONObj::TGT:
             lowerInclusive = false;
         case BSONObj::GTE:
+        case BSONObj::TGTE:
             lower = e;
             break;
         case BSONObj::opALL: {

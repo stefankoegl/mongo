@@ -523,6 +523,7 @@ namespace mongo {
         } // switch(getType())
     }
 
+
     // Helper function for Value::compare.
     // Better than l-r for cases where difference > MAX_INT
     template <typename T>

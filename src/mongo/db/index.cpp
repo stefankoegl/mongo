@@ -30,6 +30,7 @@
 #include "mongo/db/namespace-inl.h"
 #include "mongo/db/ops/delete.h"
 #include "mongo/db/repl/rs.h"
+#include "mongo/db/ttime.h"
 #include "mongo/util/scopeguard.h"
 #include "mongo/util/mongoutils/str.h"
 
@@ -287,7 +288,7 @@ namespace mongo {
         return true;
     }
 
-    bool prepareToBuildIndex(const BSONObj& io,
+    bool prepareToBuildIndex(BSONObj& io,
                              bool mayInterrupt,
                              bool god,
                              string& sourceNS,
@@ -310,19 +311,6 @@ namespace mongo {
         const char *name = io.getStringField("name");
         uassert(12523, "no index name specified", *name);
 
-        BSONObj key = io.getObjectField("key");
-        uassert(12524, "index key pattern too large", key.objsize() <= 2048);
-        if( !validKeyPattern(key) ) {
-            string s = string("bad index key pattern ") + key.toString();
-            uasserted(10098 , s.c_str());
-        }
-
-        if ( sourceNS.empty() || key.isEmpty() ) {
-            LOG(2) << "bad add index attempt name:" << (name?name:"") << "\n  ns:" <<
-                   sourceNS << "\n  idxobj:" << io.toString() << endl;
-            string s = "bad add index attempt " + sourceNS + " key:" + key.toString();
-            uasserted(12504, s);
-        }
 
         sourceCollection = nsdetails(sourceNS);
         if( sourceCollection == 0 ) {
@@ -335,6 +323,25 @@ namespace mongo {
             sourceCollection = nsdetails(sourceNS);
             tlog() << "info: creating collection " << sourceNS << " on add index" << endl;
             verify( sourceCollection );
+        }
+
+        if( sourceCollection->hasTransactionTime() )
+        {
+            io = modifyTransactionTimeIndex(io);
+        }
+
+        BSONObj key = io.getObjectField("key");
+        uassert(12524, "index key pattern too large", key.objsize() <= 2048);
+        if( !validKeyPattern(key) ) {
+            string s = string("bad index key pattern ") + key.toString();
+            uasserted(10098 , s.c_str());
+        }
+
+        if ( sourceNS.empty() || key.isEmpty() ) {
+            LOG(2) << "bad add index attempt name:" << (name?name:"") << "\n  ns:" <<
+                   sourceNS << "\n  idxobj:" << io.toString() << endl;
+            string s = "bad add index attempt " + sourceNS + " key:" + key.toString();
+            uasserted(12504, s);
         }
 
         if ( sourceCollection->findIndexByName(name) >= 0 ) {
