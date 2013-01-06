@@ -324,12 +324,19 @@ namespace mongo {
         uassert(999425, "$history value must be non-negative", numHistory >= 0);
         pq.setIncludeHistory(numHistory);
 
+        query = query.removeField("$history");
+
+        // history functionality disabled -- don't set $hint
+        if(numHistory == 0)
+        {
+            return query;
+        }
+
         /* we have to use an index that starts with {_id._id: +/- 1, transaction_start: -1, ...} */
         BSONObjBuilder b;
         b.append(StringData("$hint"), StringData("_id._id_1_transaction_start_-1_transaction_0"));
         pq.setHint(b.obj());
 
-        query = query.removeField("$history");
         return query;
     }
 }

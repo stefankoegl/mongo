@@ -59,6 +59,7 @@ namespace mongo {
 
     struct HistoricResultDetails {
         BSONObj lastId;
+        int remainingResults;
     };
 
     /** Interface for recording events that contribute to explain results. */

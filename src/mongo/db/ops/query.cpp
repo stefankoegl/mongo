@@ -652,8 +652,9 @@ namespace mongo {
             BSONElement curId = obj.getFieldDotted("_id._id");
             BSONElement lastId = historicResult->lastId.getField("_id");
 
-            if( !curId.eoo() && curId ==  lastId)
+            if( !curId.eoo() && curId ==  lastId && (historicResult->remainingResults > 0))
             {
+                historicResult->remainingResults--;
                 return true;
             }
         }
@@ -673,6 +674,7 @@ namespace mongo {
 
         BSONObj newId = b.obj();
         historicResult->lastId = newId;
+        historicResult->remainingResults = _parsedQuery.getIncludeHistory();
     }
 
     bool QueryResponseBuilder::currentMatches( ResultDetails* resultDetails ) {
