@@ -264,18 +264,43 @@ the transaction_start timestamp. Current documents (ie those that have no
 transaction_end timestamp set) will not be deleted.
 
 
-
-Still to come
+Result History
 --------------
-
-The following functionality is not yet implemented, but is planned to work as
-described below.
-
-### Included history
 
 When querying for historic documents using some criteria and a
 transaction-time(span), the result contains only those document versions that
-satisfied the criteria (within the given time(span)). However it should be possible to
+satisfied the criteria within the given time or timespan. In some cases the
+document versions prior to the actual results would be required additionally.
+This could be solved by executing one _id query for each document in the result
+set.
 
-* query for some criteria and time(span) AND
-* include some history, regardless of whether they satisfy the criteria or not
+    > db.test.find({ /* some criteria */ })
+    /* for each result execute */
+    > db.test.find({"_id": resultId, "transaction": {"all": true}})
+
+This woulod cause drastic performance overhead for non-trivial result sets. To
+automate this, it is possible to automatically include history in a result set.
+
+    > db.test.find({ /* some criteria */, "$history": 5})
+
+Based on the previous examples, the following queries for all current documents
+where a equals 2, and for each result the (one) directly preceeding document
+version.
+
+    > db.test.find({a: 2, $history: 1})
+    {                                  /* this is the actual result */
+        "_id" : {
+            "_id" : ObjectId("50cb78bb5fe03295bf74621e"),
+            "transaction_start" : Timestamp(1355512030000, 1)
+        },
+        "transaction_end" : Timestamp(1355512247000, 2),
+        "a" : 2
+    }
+    {                                  /* and this is the preceeding version */
+        "_id" : {
+            "_id" : ObjectId("50cb78bb5fe03295bf74621e"),
+            "transaction_start" : Timestamp(1355511995000, 1)
+        },
+        "transaction_end" : Timestamp(1355512030000, 1),
+        "a" : 1
+    }
