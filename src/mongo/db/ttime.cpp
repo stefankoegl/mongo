@@ -334,7 +334,7 @@ namespace mongo {
 
         /* we have to use an index that starts with {_id._id: +/- 1, transaction_start: -1, ...} */
         BSONObjBuilder b;
-        b.append(StringData("$hint"), StringData("_id._id_1_transaction_start_-1_transaction_0"));
+        b.append(StringData("$hint"), StringData("history_results_idx"));
         pq.setHint(b.obj());
 
         return query;
